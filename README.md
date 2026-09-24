@@ -79,6 +79,38 @@ The right-side **Execution Trace** panel exposes runtime information including:
 
 ---
 
+## API Documentation
+
+The backend provides a REST API implemented with FastAPI.
+
+Interactive Swagger documentation is automatically generated through OpenAPI.
+
+Main API groups include:
+
+- **System** — backend health monitoring
+- **Agent** — Agent execution, Tool Calling and RAG
+- **Conversations** — conversation and session lifecycle management
+
+### Swagger UI
+
+![Swagger API Documentation](docs/images/swagger-api-docs.png)
+
+Main endpoints:
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/health` | Backend health check |
+| POST | `/chat` | Run Agent conversation |
+| POST | `/conversations` | Create a conversation |
+| GET | `/conversations` | List conversations |
+| GET | `/conversations/{conversation_id}/messages` | Load conversation history |
+| DELETE | `/conversations/{conversation_id}` | Delete conversation and clear Agent Session |
+
+When the backend is running locally, the interactive API documentation is available at:
+
+```text
+http://127.0.0.1:8000/docs
+
 ## Deterministic Calculator Tool
 
 For deterministic arithmetic tasks, the Agent invokes the `calculator` tool instead of relying on LLM-generated arithmetic.
