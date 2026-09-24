@@ -1,0 +1,11 @@
+﻿【个人信息与求职方向】
+姓名：示例用户。求职方向：AI应用工程师、算法工程师。
+
+【Agent项目】
+基于 Agent Framework 构建智能体应用，支持工具调用、多轮会话和执行日志。
+
+【RAG与后端】
+使用 Embeddings、语义检索、FastAPI 和 PostgreSQL 构建本地知识检索与服务系统。
+
+【技术栈】
+Python、FastAPI、PostgreSQL、Vue、RAG、Transformer。
