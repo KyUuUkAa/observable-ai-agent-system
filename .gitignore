@@ -1,35 +1,23 @@
-@'
-# ============================================================
-# Environment / Secrets
-# ============================================================
-
+# Environment / secrets
 .env
 .env.*
 !.env.example
 
-
-# ============================================================
 # Python
-# ============================================================
-
 __pycache__/
 *.py[cod]
 *$py.class
-
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
 .coverage
 .coverage.*
 coverage.xml
 htmlcov/
-
 .venv/
 venv/
 env/
 ENV/
-
 build/
 develop-eggs/
 downloads/
@@ -45,73 +33,39 @@ wheels/
 .installed.cfg
 *.egg
 
-
-# ============================================================
-# Runtime / Logs / Local Database
-# ============================================================
-
+# Runtime logs and local databases
 *.log
+*.log.*
 logs.jsonl
-
 *.db
 *.db-*
 *.sqlite
 *.sqlite3
-
 archive/
 
-
-# ============================================================
-# Local / Private RAG Data
-# ============================================================
-
-# Personal/private RAG data must not be published.
-# Keep only safe example files in Git.
-
+# Local/private RAG data; keep only safe examples
 data/*
 !data/.gitkeep
 !data/resume.example.txt
 
-
-# ============================================================
-# Evaluation Generated Reports
-# ============================================================
-
+# Generated evaluation output
 reports/
 evaluation/reports/
 
-
-# ============================================================
 # Node / Vue
-# ============================================================
-
 node_modules/
 dist/
-
 .vite/
 .vite-temp/
-
 coverage/
-
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-
-# ============================================================
-# IDE
-# ============================================================
-
+# IDE and OS files
 .vscode/
 .idea/
-
-
-# ============================================================
-# Operating System
-# ============================================================
-
 .DS_Store
 Thumbs.db
 desktop.ini
-'@ | Set-Content -Encoding UTF8 .gitignore

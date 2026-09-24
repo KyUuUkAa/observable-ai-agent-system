@@ -1,3 +1,10 @@
+fastapi
+uvicorn[standard]
 openai
 openai-agents
 python-dotenv
+psycopg[binary]
+asyncpg
+sqlalchemy
+numpy
+sentence-transformers

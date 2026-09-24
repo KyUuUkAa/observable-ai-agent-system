@@ -110,6 +110,7 @@ When the backend is running locally, the interactive API documentation is availa
 
 ```text
 http://127.0.0.1:8000/docs
+```
 
 ## Deterministic Calculator Tool
 
@@ -799,7 +800,8 @@ observable-ai-agent-system/
 ├── docs/
 │   └── images/
 │       ├── agent-rag-trace.png
-│       └── calculator-tool-trace.png
+│       ├── calculator-tool-trace.png
+│       └── swagger-api-docs.png
 │
 ├── evaluation/
 │   ├── __init__.py
@@ -812,6 +814,13 @@ observable-ai-agent-system/
 │   ├── test_rag.py
 │   └── test_session.py
 │
+├── scripts/
+│   ├── check_environment.ps1
+│   ├── init_database.sql
+│   ├── start_backend.ps1
+│   ├── start_frontend.ps1
+│   └── start_all.ps1
+│
 ├── XYNai-agent/
 │   └── Vue frontend
 │
@@ -821,193 +830,162 @@ observable-ai-agent-system/
 
 ---
 
-# Quick Start
+# Quick Start / Run
+
+The commands below target PowerShell on Windows. Required local services and tools:
+
+- Python 3.10+; Conda is optional but recommended
+- PostgreSQL server (the `psql` client is useful for initialization)
+- Ollama with the `qwen3:4b` model
+- Node.js and npm; use a version accepted by `XYNai-agent/package.json`
 
 ## 1. Clone the Repository
 
-```bash
+```powershell
 git clone https://github.com/KyUuUkAa/observable-ai-agent-system.git
-cd observable-ai-agent-system
+Set-Location observable-ai-agent-system
 ```
 
----
-
-## 2. Create Python Environment
+## 2. Create the Python Environment
 
 Using Conda:
 
-```bash
-conda create -n agent python=3.10
+```powershell
+conda create -n agent python=3.10 -y
 conda activate agent
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-Or use an existing Python environment.
+An existing Python environment can also be used. The launchers use the active environment by default and also accept `-CondaEnv <name>` or `-PythonPath <path>`.
 
-Install dependencies:
+## 3. Prepare PostgreSQL
 
-```bash
-pip install -r requirements.txt
+Start PostgreSQL, then create the database and the four required tables:
+
+```powershell
+psql -U postgres -c "CREATE DATABASE career_agent;"
+psql -U postgres -d career_agent -f .\scripts\init_database.sql
 ```
 
----
+If the database already exists, skip the first command. You can run the SQL file through pgAdmin instead when `psql` is not on `PATH`. The schema script is idempotent and creates the product conversation tables plus the Agent SDK session tables.
 
-## 3. Install Ollama
+## 4. Configure `.env`
 
-Install Ollama from the official Ollama distribution.
-
-Pull the local model:
-
-```bash
-ollama pull qwen3:4b
+```powershell
+Copy-Item .env.example .env
 ```
 
-Verify that the model exists:
-
-```bash
-ollama list
-```
-
-Make sure the Ollama service is running before starting the backend.
-
----
-
-## 4. Prepare PostgreSQL
-
-Create a PostgreSQL database:
-
-```sql
-CREATE DATABASE career_agent;
-```
-
-The default project database name is:
-
-```text
-career_agent
-```
-
-Make sure PostgreSQL is running locally.
-
----
-
-## 5. Configure Environment Variables
-
-Copy:
-
-```text
-.env.example
-```
-
-to:
-
-```text
-.env
-```
-
-Example:
+Edit `.env` locally and replace every password placeholder. Keep both database configurations consistent:
 
 ```env
-AGENT_DATABASE_URL=postgresql+asyncpg://postgres:your_password@localhost:5432/career_agent
-
-# Optional
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
+POSTGRES_DB=career_agent
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_postgres_password
+AGENT_DATABASE_URL=postgresql+asyncpg://postgres:your_postgres_password@127.0.0.1:5432/career_agent
 HF_TOKEN=
 ```
 
-Replace:
+If the password contains reserved URL characters, URL-encode it in `AGENT_DATABASE_URL`. Never commit the real `.env`; it is ignored by Git.
 
-```text
-your_password
+## 5. Prepare Local RAG Data
+
+`data/resume.txt` is private and ignored by Git. Create it from the safe example, then replace the example text with local content:
+
+```powershell
+Copy-Item .\data\resume.example.txt .\data\resume.txt
 ```
 
-with your local PostgreSQL password.
+Separate document sections with blank lines so the RAG loader can chunk them independently.
 
-Never commit the real `.env` file.
+## 6. Install Ollama and Qwen3
 
-The repository `.gitignore` already excludes it.
+Install Ollama, ensure its local service is running, then pull and verify the model:
 
----
-
-# Local RAG Data
-
-Private resume/project data is intentionally excluded from Git.
-
-The real local document:
-
-```text
-data/resume.txt
+```powershell
+ollama pull qwen3:4b
+ollama list
 ```
 
-is ignored.
+The backend expects Ollama at `http://127.0.0.1:11434` and the exact model family `qwen3:4b`.
 
-A public example file is included:
+## 7. Install Frontend Dependencies
 
-```text
-data/resume.example.txt
-```
-
-To run your own private RAG knowledge base, create:
-
-```text
-data/resume.txt
-```
-
-and place your own content inside it.
-
-Example structure:
-
-```text
-【Project A】
-Project description...
-
-【Project B】
-Project description...
-
-【Technical Skills】
-Python, FastAPI, PostgreSQL...
-```
-
-Separate sections with blank lines so they can be chunked independently.
-
----
-
-# Start Backend
-
-From the project root:
-
-```bash
-uvicorn api:app --reload
-```
-
-Default backend address:
-
-```text
-http://127.0.0.1:8000
-```
-
-Health check:
-
-```text
-GET /health
-```
-
----
-
-# Start Frontend
-
-Open another terminal:
-
-```bash
-cd XYNai-agent
+```powershell
+Set-Location .\XYNai-agent
 npm install
-npm run dev
+Set-Location ..
 ```
 
-Vite will normally start the frontend on:
+## 8. Check the Environment
 
-```text
-http://localhost:5173
+Run the complete preflight check from the project root:
+
+```powershell
+.\scripts\check_environment.ps1
 ```
 
-or another available local Vite port.
+It checks Python/Conda, Python packages, `.env`, private RAG data, PostgreSQL connectivity and schema, Ollama and `qwen3:4b`, Node.js, npm, and frontend dependencies. It never prints secret values.
+
+To select a Conda environment without activating it:
+
+```powershell
+.\scripts\check_environment.ps1 -CondaEnv agent
+```
+
+## 9. Start Backend and Frontend Separately
+
+Backend terminal:
+
+```powershell
+.\scripts\start_backend.ps1
+```
+
+Frontend terminal:
+
+```powershell
+.\scripts\start_frontend.ps1
+```
+
+Equivalent manual commands are:
+
+```powershell
+python -m uvicorn api:app --host 127.0.0.1 --port 8000 --reload
+
+Set-Location .\XYNai-agent
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+Default URLs:
+
+- Frontend: `http://127.0.0.1:5173`
+- Backend: `http://127.0.0.1:8000`
+- Health: `http://127.0.0.1:8000/health`
+- Swagger: `http://127.0.0.1:8000/docs`
+
+## 10. One-Command Start
+
+After completing the setup above, launch both services in separate PowerShell windows:
+
+```powershell
+.\scripts\start_all.ps1
+```
+
+For a named Conda environment:
+
+```powershell
+.\scripts\start_all.ps1 -CondaEnv agent
+```
+
+If local policy blocks project scripts, allow them only for the current shell and retry:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+```
+
+Stop the services with `Ctrl+C` in their respective windows.
 
 ---
 
