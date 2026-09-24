@@ -8,28 +8,56 @@ import time
 
 @function_tool
 def calculator(a: float, b: float, operation: str) -> str:
+    """
+    执行简单数学计算。
+
+    operation 支持：
+    - add 或 +
+    - subtract 或 -
+    - multiply、*、x、×
+    - divide、/、÷
+    """
 
     start_time = time.perf_counter()
-    try:
-        """
-        执行简单数学计算。
-        """
 
+    try:
         print(
             f"[TOOL] calculator 被调用："
             f"a={a}, b={b}, operation={operation}"
         )
 
-        if operation == "add":
+        # 统一模型可能生成的不同操作符
+        op = operation.strip().lower()
+
+        operation_aliases = {
+            "add": "add",
+            "+": "add",
+
+            "subtract": "subtract",
+            "-": "subtract",
+
+            "multiply": "multiply",
+            "*": "multiply",
+            "x": "multiply",
+            "×": "multiply",
+
+            "divide": "divide",
+            "/": "divide",
+            "÷": "divide",
+        }
+
+        normalized_operation = operation_aliases.get(op)
+
+        if normalized_operation == "add":
             result = a + b
 
-        elif operation == "subtract":
+        elif normalized_operation == "subtract":
             result = a - b
 
-        elif operation == "multiply":
+        elif normalized_operation == "multiply":
             result = a * b
 
-        elif operation == "divide":
+        elif normalized_operation == "divide":
             if b == 0:
                 return "除数不能为0"
 
@@ -38,7 +66,12 @@ def calculator(a: float, b: float, operation: str) -> str:
         else:
             return f"不支持的操作：{operation}"
 
+        # 如果结果本质上是整数，避免显示成 7006652.0
+        if isinstance(result, float) and result.is_integer():
+            result = int(result)
+
         return f"计算结果：{result}"
+
     finally:
         latency = (
             time.perf_counter()
@@ -48,7 +81,7 @@ def calculator(a: float, b: float, operation: str) -> str:
         print(
             f"[PERF] calculator: "
             f"{latency:.4f}s"
-    )
+        )
 
 @function_tool
 
