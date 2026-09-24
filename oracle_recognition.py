@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import io
 import os
+import time
+import uuid
+from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
@@ -13,8 +16,12 @@ from PIL import Image, UnidentifiedImageError
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "oracle" / "best_portable.pt"
 MAX_IMAGE_PIXELS = 25_000_000
+IMAGE_REFERENCE_TTL_SECONDS = 15 * 60
+IMAGE_REFERENCE_MAX_ITEMS = 8
 
 _prediction_lock = Lock()
+_image_reference_lock = Lock()
+_image_references: OrderedDict[str, tuple[float, bytes]] = OrderedDict()
 
 
 class OracleRecognitionError(RuntimeError):
@@ -27,6 +34,10 @@ class OracleModelUnavailableError(OracleRecognitionError):
 
 class OracleImageError(OracleRecognitionError):
     """Raised when uploaded bytes are not a supported image."""
+
+
+class OracleImageReferenceError(OracleRecognitionError):
+    """Raised when a short-lived Agent image reference is invalid or expired."""
 
 
 def get_model_path() -> Path:
@@ -100,6 +111,63 @@ def decode_image(content: bytes) -> Image.Image:
         raise
     except (UnidentifiedImageError, OSError) as exc:
         raise OracleImageError("上传内容不是可读取的图片。") from exc
+
+
+def _purge_expired_image_references(now: float) -> None:
+    """Remove expired entries while holding the image reference lock."""
+
+    expired = [
+        image_id
+        for image_id, (expires_at, _) in _image_references.items()
+        if expires_at <= now
+    ]
+    for image_id in expired:
+        _image_references.pop(image_id, None)
+
+
+def cache_oracle_image(content: bytes) -> str:
+    """Cache one validated image briefly and return an opaque Agent-safe reference."""
+
+    decode_image(content)
+    image_id = uuid.uuid4().hex
+    now = time.monotonic()
+
+    with _image_reference_lock:
+        _purge_expired_image_references(now)
+        _image_references[image_id] = (
+            now + IMAGE_REFERENCE_TTL_SECONDS,
+            bytes(content),
+        )
+        while len(_image_references) > IMAGE_REFERENCE_MAX_ITEMS:
+            _image_references.popitem(last=False)
+
+    return image_id
+
+
+def get_cached_oracle_image(image_id: str) -> bytes:
+    """Resolve an opaque image reference without allowing arbitrary file access."""
+
+    if not isinstance(image_id, str) or len(image_id) != 32:
+        raise OracleImageReferenceError("图片引用无效，请重新上传图片。")
+
+    now = time.monotonic()
+    with _image_reference_lock:
+        _purge_expired_image_references(now)
+        entry = _image_references.get(image_id)
+        if entry is None:
+            raise OracleImageReferenceError("图片引用不存在或已过期，请重新上传图片。")
+        _image_references.move_to_end(image_id)
+        return entry[1]
+
+
+def has_cached_oracle_image(image_id: str) -> bool:
+    """Return whether an image reference is currently available."""
+
+    try:
+        get_cached_oracle_image(image_id)
+    except OracleImageReferenceError:
+        return False
+    return True
 
 
 @lru_cache(maxsize=1)

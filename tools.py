@@ -1,8 +1,15 @@
+import json
+import time
+
 from agents import function_tool
 
 from rag import search_resume_rag
-
-import time
+from oracle_recognition import (
+    OracleImageReferenceError,
+    OracleRecognitionError,
+    get_cached_oracle_image,
+    recognize_oracle_image as classify_oracle_image,
+)
 
 
 
@@ -128,3 +135,52 @@ def search_resume(
             f"[PERF] search_resume: "
             f"{latency:.4f}s"
         )
+
+
+@function_tool
+def recognize_oracle_image(image_id: str) -> str:
+    """
+    识别用户已经通过系统上传的一张甲骨文单字图片。
+
+    Args:
+        image_id: 系统提供的短期图片引用。只能使用消息附件中的 image_id，
+            不要编造，也不要传入本地文件路径或 URL。
+
+    Returns:
+        JSON 文本，包含预测类别编码、置信度、Top-5 候选和模型信息。
+        当前类别编码尚未映射到现代汉字或释义。
+    """
+
+    start_time = time.perf_counter()
+    print(f"[TOOL] recognize_oracle_image 被调用：image_id={image_id}")
+
+    try:
+        content = get_cached_oracle_image(image_id)
+        result = classify_oracle_image(content)
+        return json.dumps(
+            {
+                "status": "success",
+                "notice": "类别编码尚未映射到现代汉字或释义。",
+                **result,
+            },
+            ensure_ascii=False,
+        )
+    except OracleImageReferenceError as error:
+        return json.dumps(
+            {
+                "status": "error",
+                "error": str(error),
+            },
+            ensure_ascii=False,
+        )
+    except OracleRecognitionError as error:
+        return json.dumps(
+            {
+                "status": "error",
+                "error": str(error),
+            },
+            ensure_ascii=False,
+        )
+    finally:
+        latency = time.perf_counter() - start_time
+        print(f"[PERF] recognize_oracle_image: {latency:.4f}s")

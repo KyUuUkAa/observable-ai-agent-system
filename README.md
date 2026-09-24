@@ -178,7 +178,7 @@ Advantages include:
 
 ## 3. Function Tool Calling
 
-The current Agent contains two primary tools.
+The current Agent contains three primary tools.
 
 ### `search_resume`
 
@@ -224,6 +224,26 @@ calculator(
 Tool Output
   ↓
 计算结果：7006652
+```
+
+### `recognize_oracle_image`
+
+Classifies one Oracle Bone Script glyph that was uploaded through the validated backend pipeline. The tool accepts only a short-lived opaque `image_id`; it cannot read arbitrary local paths or remote URLs.
+
+The tool returns the predicted dataset class code, confidence and Top-5 candidates. Because the current delivery does not include a verified code-to-modern-character dictionary, the Agent is instructed not to invent a character or interpretation.
+
+Frontend flow:
+
+```text
+Upload and recognize one glyph
+        ↓
+Receive short-lived image_id
+        ↓
+Click "交给 Agent 分析"
+        ↓
+Agent calls recognize_oracle_image
+        ↓
+Execution Trace records the tool call and output
 ```
 
 ---
@@ -1066,6 +1086,7 @@ The response includes the Top-1 class code, Top-5 predictions and confidence val
 ```json
 {
   "filename": "glyph.png",
+  "image_id": "6c77965e2f174638b99b6ec0ea8f5771",
   "image": { "width": 224, "height": 180 },
   "prediction": { "class_id": 12, "class_code": "038000", "confidence": 0.91 },
   "top5": [
@@ -1077,6 +1098,16 @@ The response includes the Top-1 class code, Top-5 predictions and confidence val
     "image_size": 224,
     "device": "cpu"
   }
+}
+```
+
+`image_id` is kept only in process memory for 15 minutes and is intended for the Agent Tool. To invoke the Agent with this attachment, include it in the normal chat request:
+
+```json
+{
+  "conversation_id": "7a8d3c17-eb7b-4fc5-a66c-d653b91d6675",
+  "message": "请分析这张甲骨文单字图片。",
+  "oracle_image_id": "6c77965e2f174638b99b6ec0ea8f5771"
 }
 ```
 
@@ -1366,6 +1397,7 @@ Known limitations include:
 - no large-scale vector database
 - Oracle recognition currently accepts one cropped glyph rather than locating multiple glyphs in a full rubbing
 - Oracle classifier labels are dataset codes until a verified code-to-character dictionary is added
+- Agent image references are short-lived and process-local; re-upload after a backend restart or expiration
 
 The evaluation metrics in this repository should therefore be interpreted as results for the current benchmark and environment rather than universal model performance claims.
 
@@ -1388,15 +1420,15 @@ Larger RAG knowledge base
         ↓
 Context management / compaction if required
         ↓
-Multimodal Agent tools
+Oracle character dictionary and multi-glyph detection
 ```
 
-A future application direction is to expose the standalone Oracle classifier as an Agent Tool and add capabilities such as:
+The standalone Oracle classifier is now available as the `recognize_oracle_image` Agent Tool. Future capabilities can include:
 
 ```text
-classify_oracle_image
 retrieve_similar_oracles
 search_oracle_knowledge
+detect_multiple_oracle_glyphs
 ```
 
 The existing Agent orchestration, PostgreSQL persistence, observability and evaluation framework can be reused for these multimodal capabilities.

@@ -27,7 +27,9 @@ from oracle_recognition import (
     OracleImageError,
     OracleModelUnavailableError,
     OracleRecognitionError,
+    cache_oracle_image,
     get_model_status,
+    has_cached_oracle_image,
     recognize_oracle_image,
 )
 
@@ -135,6 +137,18 @@ class ChatRequest(BaseModel):
         description="User message sent to the Agent.",
         examples=[
             "我的YOLO项目主要做了什么？"
+        ],
+    )
+
+    oracle_image_id: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{32}$",
+        description=(
+            "Optional short-lived reference returned by /oracle/recognize. "
+            "When present, the Agent must invoke the Oracle recognition tool."
+        ),
+        examples=[
+            "6c77965e2f174638b99b6ec0ea8f5771"
         ],
     )
 
@@ -349,6 +363,7 @@ async def recognize_oracle(
 
     return {
         "filename": file.filename,
+        "image_id": cache_oracle_image(content),
         **result,
     }
 
@@ -395,6 +410,20 @@ async def chat(
         request.message,
     )
 
+    if (
+        request.oracle_image_id
+        and not has_cached_oracle_image(
+            request.oracle_image_id
+        )
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "甲骨文图片引用不存在或已过期，"
+                "请重新上传并识别图片。"
+            ),
+        )
+
     # ========================================================
     # 1. 保存用户消息
     # ========================================================
@@ -438,8 +467,19 @@ async def chat(
     # 3. 执行 Agent
     # ========================================================
 
+    agent_input = request.message
+    if request.oracle_image_id:
+        agent_input = (
+            f"{request.message}\n\n"
+            "[ORACLE_IMAGE_ATTACHMENT]\n"
+            f"image_id: {request.oracle_image_id}\n"
+            "这是服务端验证的本次消息图片附件。"
+            "必须调用 recognize_oracle_image，"
+            "并且只能使用上面的 image_id。"
+        )
+
     result = await harness.run(
-        user_input=request.message,
+        user_input=agent_input,
         conversation_id=(
             request.conversation_id
         ),

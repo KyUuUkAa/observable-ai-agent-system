@@ -58,6 +58,7 @@ interface OraclePrediction {
 
 interface OracleRecognitionResponse {
   filename: string
+  image_id: string
   image: {
     width: number
     height: number
@@ -105,6 +106,8 @@ const oraclePreviewUrl = ref<string | null>(null)
 
 const oracleLoading = ref<boolean>(false)
 
+const oracleAgentLoading = ref<boolean>(false)
+
 const oracleError = ref<string>('')
 
 const oracleResult = ref<OracleRecognitionResponse | null>(null)
@@ -126,7 +129,18 @@ const canSend = computed(() => {
 })
 
 const canRecognizeOracle = computed(() => {
-  return oracleFile.value !== null && !oracleLoading.value
+  return oracleFile.value !== null && !oracleLoading.value && !oracleAgentLoading.value
+})
+
+const canAskOracleAgent = computed(() => {
+  return (
+    oracleResult.value !== null &&
+    !oracleLoading.value &&
+    !oracleAgentLoading.value &&
+    !loading.value &&
+    !historyLoading.value &&
+    !conversationCreating.value
+  )
 })
 
 // ========================================
@@ -231,9 +245,9 @@ async function selectConversation(conversation: Conversation) {
 // 创建 Conversation
 // ========================================
 
-async function createConversation() {
+async function createConversation(): Promise<boolean> {
   if (conversationCreating.value || loading.value) {
-    return
+    return false
   }
 
   console.log('开始创建 Conversation')
@@ -274,8 +288,10 @@ async function createConversation() {
 
     // 更新左侧列表
     await loadConversations()
+    return true
   } catch (error) {
     console.error('创建 Conversation 失败:', error)
+    return false
   } finally {
     conversationCreating.value = false
   }
@@ -533,6 +549,79 @@ async function recognizeOracle() {
   }
 }
 
+async function askOracleAgent() {
+  const result = oracleResult.value
+  if (!result || !canAskOracleAgent.value) {
+    return
+  }
+
+  oracleAgentLoading.value = true
+  oracleError.value = ''
+
+  try {
+    if (!conversationId.value) {
+      const created = await createConversation()
+      if (!created || !conversationId.value) {
+        throw new Error('无法创建 Agent 会话。')
+      }
+    }
+
+    const text = '请调用甲骨文识别工具分析这张单字图片，并说明类别编码、置信度和 Top‑5 候选。'
+    const currentConversation = conversations.value.find(
+      (conversation) => conversation.id === conversationId.value,
+    )
+    const shouldRefreshTitle = currentConversation?.title === 'New Conversation'
+
+    messages.value.push({
+      role: 'user',
+      content: text,
+    })
+    loading.value = true
+
+    const response = await fetch(`${API_BASE_URL}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        conversation_id: conversationId.value,
+        message: text,
+        oracle_image_id: result.image_id,
+      }),
+    })
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(
+        typeof data.detail === 'string' ? data.detail : `Agent 调用失败：HTTP ${response.status}`,
+      )
+    }
+
+    const agentResponse = data as AgentResponse
+    lastRun.value = agentResponse
+
+    if (agentResponse.status !== 'success') {
+      throw new Error(agentResponse.error ?? 'Agent 执行失败。')
+    }
+
+    messages.value.push({
+      role: 'assistant',
+      content: agentResponse.output ?? 'Agent 没有返回内容。',
+    })
+
+    if (shouldRefreshTitle) {
+      await loadConversations()
+    }
+
+    activeMode.value = 'chat'
+  } catch (error) {
+    oracleError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    loading.value = false
+    oracleAgentLoading.value = false
+  }
+}
+
 // ========================================
 // 页面加载
 // ========================================
@@ -732,6 +821,15 @@ onBeforeUnmount(() => {
 
           <button class="oracle-submit" :disabled="!canRecognizeOracle" @click="recognizeOracle">
             {{ oracleLoading ? '识别中...' : '开始识别' }}
+          </button>
+
+          <button
+            v-if="oracleResult"
+            class="oracle-agent-submit"
+            :disabled="!canAskOracleAgent"
+            @click="askOracleAgent"
+          >
+            {{ oracleAgentLoading ? 'Agent 分析中...' : '交给 Agent 分析' }}
           </button>
 
           <p class="oracle-note">模型输出为数据集类别编码；现代汉字和释义映射将在后续阶段补充。</p>
@@ -1524,6 +1622,35 @@ onBeforeUnmount(() => {
 }
 
 .oracle-submit:disabled {
+  opacity: 0.45;
+
+  cursor: not-allowed;
+}
+
+.oracle-agent-submit {
+  width: 100%;
+  height: 44px;
+
+  margin-top: 10px;
+
+  border: 1px solid #78350f;
+  border-radius: 10px;
+
+  background: white;
+
+  color: #78350f;
+
+  font-size: 14px;
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+.oracle-agent-submit:hover:not(:disabled) {
+  background: #fffbeb;
+}
+
+.oracle-agent-submit:disabled {
   opacity: 0.45;
 
   cursor: not-allowed;
