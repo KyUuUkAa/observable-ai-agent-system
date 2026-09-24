@@ -90,6 +90,7 @@ Main API groups include:
 - **System** — backend health monitoring
 - **Agent** — Agent execution, Tool Calling and RAG
 - **Conversations** — conversation and session lifecycle management
+- **Oracle Recognition** — local single-glyph Oracle Bone Script classification
 
 ### Swagger UI
 
@@ -105,6 +106,8 @@ Main endpoints:
 | GET | `/conversations` | List conversations |
 | GET | `/conversations/{conversation_id}/messages` | Load conversation history |
 | DELETE | `/conversations/{conversation_id}` | Delete conversation and clear Agent Session |
+| GET | `/oracle/health` | Check whether the local classifier is configured |
+| POST | `/oracle/recognize` | Upload one cropped glyph and return Top-5 class codes |
 
 When the backend is running locally, the interactive API documentation is available at:
 
@@ -782,6 +785,9 @@ observable-ai-agent-system/
 ├── rag.py
 │   └── Local embedding, retrieval and hybrid ranking
 │
+├── oracle_recognition.py
+│   └── Lazy-loaded Oracle Bone Script single-glyph classifier
+│
 ├── tools.py
 │   └── Agent Function Tools
 │
@@ -796,6 +802,10 @@ observable-ai-agent-system/
 ├── data/
 │   ├── .gitkeep
 │   └── resume.example.txt
+│
+├── models/oracle/
+│   ├── .gitkeep
+│   └── README.md
 │
 ├── docs/
 │   └── images/
@@ -886,6 +896,9 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your_postgres_password
 AGENT_DATABASE_URL=postgresql+asyncpg://postgres:your_postgres_password@127.0.0.1:5432/career_agent
 HF_TOKEN=
+ORACLE_MODEL_PATH=models/oracle/best_portable.pt
+ORACLE_DEVICE=cpu
+ORACLE_IMGSZ=224
 ```
 
 If the password contains reserved URL characters, URL-encode it in `AGENT_DATABASE_URL`. Never commit the real `.env`; it is ignored by Git.
@@ -911,7 +924,20 @@ ollama list
 
 The backend expects Ollama at `http://127.0.0.1:11434` and the exact model family `qwen3:4b`.
 
-## 7. Install Frontend Dependencies
+## 7. Add the Oracle Classifier Weight
+
+The classifier weight is a local runtime asset and is intentionally excluded from Git. Copy the portable weight into the expected directory:
+
+```powershell
+Copy-Item "<path-to-oracle-delivery>\runs\preserve_shape\weights\best_portable.pt" `
+  ".\models\oracle\best_portable.pt"
+```
+
+The default configuration uses CPU inference. To keep the weight elsewhere, set `ORACLE_MODEL_PATH` in `.env` to an absolute path or a path relative to the project root. Do not commit model weights unless you have explicitly chosen an appropriate model-distribution strategy.
+
+The current model classifies one already-cropped glyph. Its output labels are dataset codes such as `001000`; a code-to-modern-character mapping is not included in the source delivery, so the UI displays class codes and confidence values.
+
+## 8. Install Frontend Dependencies
 
 ```powershell
 Set-Location .\XYNai-agent
@@ -919,7 +945,7 @@ npm install
 Set-Location ..
 ```
 
-## 8. Check the Environment
+## 9. Check the Environment
 
 Run the complete preflight check from the project root:
 
@@ -927,7 +953,7 @@ Run the complete preflight check from the project root:
 .\scripts\check_environment.ps1
 ```
 
-It checks Python/Conda, Python packages, `.env`, private RAG data, PostgreSQL connectivity and schema, Ollama and `qwen3:4b`, Node.js, npm, and frontend dependencies. It never prints secret values.
+It checks Python/Conda, Python packages, `.env`, private RAG data, the Oracle classifier weight, PostgreSQL connectivity and schema, Ollama and `qwen3:4b`, Node.js, npm, and frontend dependencies. It never prints secret values.
 
 To select a Conda environment without activating it:
 
@@ -935,7 +961,7 @@ To select a Conda environment without activating it:
 .\scripts\check_environment.ps1 -CondaEnv agent
 ```
 
-## 9. Start Backend and Frontend Separately
+## 10. Start Backend and Frontend Separately
 
 Backend terminal:
 
@@ -963,9 +989,10 @@ Default URLs:
 - Frontend: `http://127.0.0.1:5173`
 - Backend: `http://127.0.0.1:8000`
 - Health: `http://127.0.0.1:8000/health`
+- Oracle model health: `http://127.0.0.1:8000/oracle/health`
 - Swagger: `http://127.0.0.1:8000/docs`
 
-## 10. One-Command Start
+## 11. One-Command Start
 
 After completing the setup above, launch both services in separate PowerShell windows:
 
@@ -1021,6 +1048,42 @@ records execution trace
 stores messages
         ↓
 returns response
+```
+
+---
+
+## Recognize an Oracle Bone Script Glyph
+
+```http
+POST /oracle/recognize
+Content-Type: multipart/form-data
+```
+
+Upload one PNG, JPEG, BMP, or other Pillow-supported image in the `file` field. The backend validates that the upload is an image, rejects files larger than 10 MB, pads the glyph to a square without stretching it, and lazily loads the local model on the first recognition request.
+
+The response includes the Top-1 class code, Top-5 predictions and confidence values. Example:
+
+```json
+{
+  "filename": "glyph.png",
+  "image": { "width": 224, "height": 180 },
+  "prediction": { "class_id": 12, "class_code": "038000", "confidence": 0.91 },
+  "top5": [
+    { "class_id": 12, "class_code": "038000", "confidence": 0.91 }
+  ],
+  "model": {
+    "task": "single_glyph_classification",
+    "class_count": 39,
+    "image_size": 224,
+    "device": "cpu"
+  }
+}
+```
+
+Model availability can be checked without loading the weight:
+
+```http
+GET /oracle/health
 ```
 
 ---
@@ -1301,6 +1364,8 @@ Known limitations include:
 - no containerized deployment yet
 - no streaming response implementation
 - no large-scale vector database
+- Oracle recognition currently accepts one cropped glyph rather than locating multiple glyphs in a full rubbing
+- Oracle classifier labels are dataset codes until a verified code-to-character dictionary is added
 
 The evaluation metrics in this repository should therefore be interpreted as results for the current benchmark and environment rather than universal model performance claims.
 
@@ -1326,7 +1391,7 @@ Context management / compaction if required
 Multimodal Agent tools
 ```
 
-A future application direction is to extend the current Agent infrastructure into an Oracle Bone Script multimodal system with tools such as:
+A future application direction is to expose the standalone Oracle classifier as an Agent Tool and add capabilities such as:
 
 ```text
 classify_oracle_image

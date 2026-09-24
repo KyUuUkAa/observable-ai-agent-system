@@ -43,6 +43,12 @@ logs.jsonl
 *.sqlite3
 archive/
 
+# Local model weights and temporary uploads
+models/oracle/*
+!models/oracle/.gitkeep
+!models/oracle/README.md
+uploads/
+
 # Local/private RAG data; keep only safe examples
 data/*
 !data/.gitkeep

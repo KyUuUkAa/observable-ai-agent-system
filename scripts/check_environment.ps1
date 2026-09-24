@@ -113,8 +113,27 @@ function Resolve-PythonRunner {
         try {
             $probe = Invoke-Runner -Runner $runner -Arguments @("--version")
             if ($probe.ExitCode -eq 0) {
-                Write-Result -Level "OK" -Message ("Python: {0} (Conda environment: {1})" -f $probe.Output, $CondaEnv)
-                return $runner
+                # Resolve the environment's actual Python executable once.
+                # Passing a quote-heavy `python -c` payload through `conda run`
+                # is unreliable in Windows PowerShell 5.1.
+                $pathProbe = Invoke-Runner -Runner $runner -Arguments @(
+                    "-c",
+                    "import sys; print(sys.executable)"
+                )
+                if ($pathProbe.ExitCode -eq 0) {
+                    $resolvedPython = $pathProbe.Output.Trim()
+                    if (Test-Path -LiteralPath $resolvedPython -PathType Leaf) {
+                        Write-Result -Level "OK" -Message ("Python: {0} (Conda environment: {1})" -f $probe.Output, $CondaEnv)
+                        return [pscustomobject]@{
+                            Command = (Resolve-Path -LiteralPath $resolvedPython).Path
+                            PrefixArgs = @()
+                            Description = "conda:$CondaEnv"
+                        }
+                    }
+                }
+
+                Add-Failure "Conda environment '$CondaEnv' runs, but its Python executable could not be resolved."
+                return $null
             }
 
             Add-Failure "Conda environment '$CondaEnv' is missing or cannot run Python. Create it first or pass a valid -CondaEnv."
@@ -263,11 +282,29 @@ function Test-BackendEnvironment {
         Add-Failure "data/resume.txt is missing. Copy data/resume.example.txt and replace it with local private content."
     }
 
+    $oracleModelSetting = "models/oracle/best_portable.pt"
+    if ($settings -and $settings.ContainsKey("ORACLE_MODEL_PATH") -and
+        -not [string]::IsNullOrWhiteSpace($settings["ORACLE_MODEL_PATH"])) {
+        $oracleModelSetting = $settings["ORACLE_MODEL_PATH"]
+    }
+    $oracleModelPath = if ([System.IO.Path]::IsPathRooted($oracleModelSetting)) {
+        $oracleModelSetting
+    }
+    else {
+        Join-Path $ProjectRoot $oracleModelSetting
+    }
+    if (Test-Path -LiteralPath $oracleModelPath -PathType Leaf) {
+        Write-Result -Level "OK" -Message "Oracle classifier weight found."
+    }
+    else {
+        Add-Failure "Oracle classifier weight is missing. Copy best_portable.pt to models/oracle or set ORACLE_MODEL_PATH in .env."
+    }
+
     if ($PythonRunner) {
         try {
             $importProbe = Invoke-Runner -Runner $PythonRunner -Arguments @(
                 "-c",
-                "import fastapi, uvicorn, psycopg, asyncpg, sqlalchemy, numpy, sentence_transformers, dotenv, agents"
+                "import fastapi, uvicorn, psycopg, asyncpg, sqlalchemy, numpy, sentence_transformers, dotenv, agents, PIL, multipart, ultralytics"
             )
             if ($importProbe.ExitCode -eq 0) {
                 Write-Result -Level "OK" -Message "Required Python packages can be imported."
@@ -300,12 +337,53 @@ function Test-BackendEnvironment {
 
             if ($PythonRunner -and $script:FailureCount -eq 0) {
                 $previousEnvFile = $env:AGENT_ENV_FILE
+                $databaseProbePath = $null
                 try {
                     $env:AGENT_ENV_FILE = $envFile
-                    # Keep this as a single line because `conda run` on Windows
-                    # does not support command arguments containing newlines.
-                    $databaseProbeCode = 'import os; from dotenv import load_dotenv; import psycopg; load_dotenv(os.environ["AGENT_ENV_FILE"], override=True); required={"conversations","messages","agent_sessions","agent_messages"}; connection=psycopg.connect(host=os.getenv("POSTGRES_HOST"),port=os.getenv("POSTGRES_PORT"),dbname=os.getenv("POSTGRES_DB"),user=os.getenv("POSTGRES_USER"),password=os.getenv("POSTGRES_PASSWORD"),connect_timeout=3); cursor=connection.cursor(); cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = ''public''"); present={row[0] for row in cursor.fetchall()}; cursor.close(); connection.close(); missing=required-present; assert not missing,"Missing required database tables: "+", ".join(sorted(missing))'
-                    $databaseProbe = Invoke-Runner -Runner $PythonRunner -Arguments @("-c", $databaseProbeCode)
+                    # Windows PowerShell 5.1 can corrupt quote-heavy arguments
+                    # passed to native `python -c`. Execute a temporary script
+                    # instead so the same check works in both PowerShell editions.
+                    $databaseProbeCode = @'
+import os
+
+from dotenv import load_dotenv
+import psycopg
+
+load_dotenv(os.environ["AGENT_ENV_FILE"], override=True)
+required = {"conversations", "messages", "agent_sessions", "agent_messages"}
+
+with psycopg.connect(
+    host=os.getenv("POSTGRES_HOST"),
+    port=os.getenv("POSTGRES_PORT"),
+    dbname=os.getenv("POSTGRES_DB"),
+    user=os.getenv("POSTGRES_USER"),
+    password=os.getenv("POSTGRES_PASSWORD"),
+    connect_timeout=3,
+) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public'"
+        )
+        present = {row[0] for row in cursor.fetchall()}
+
+missing = required - present
+if missing:
+    raise RuntimeError(
+        "Missing required database tables: " + ", ".join(sorted(missing))
+    )
+'@
+                    $databaseProbePath = [System.IO.Path]::Combine(
+                        [System.IO.Path]::GetTempPath(),
+                        "observable-agent-db-probe-$PID.py"
+                    )
+                    $utf8WithoutBom = [System.Text.UTF8Encoding]::new($false)
+                    [System.IO.File]::WriteAllText(
+                        $databaseProbePath,
+                        $databaseProbeCode,
+                        $utf8WithoutBom
+                    )
+                    $databaseProbe = Invoke-Runner -Runner $PythonRunner -Arguments @($databaseProbePath)
                     if ($databaseProbe.ExitCode -eq 0) {
                         Write-Result -Level "OK" -Message "PostgreSQL credentials and required tables are valid."
                     }
@@ -317,6 +395,9 @@ function Test-BackendEnvironment {
                     Add-Failure "PostgreSQL authentication/schema check failed: $($_.Exception.Message)"
                 }
                 finally {
+                    if ($databaseProbePath -and (Test-Path -LiteralPath $databaseProbePath -PathType Leaf)) {
+                        Remove-Item -LiteralPath $databaseProbePath -Force -ErrorAction SilentlyContinue
+                    }
                     if ($null -eq $previousEnvFile) {
                         Remove-Item Env:AGENT_ENV_FILE -ErrorAction SilentlyContinue
                     }

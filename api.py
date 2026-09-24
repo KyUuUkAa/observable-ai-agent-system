@@ -15,12 +15,21 @@ load_dotenv(override=True)
 
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from agent import agent
 from harness import AgentHarness
+
+from oracle_recognition import (
+    OracleImageError,
+    OracleModelUnavailableError,
+    OracleRecognitionError,
+    get_model_status,
+    recognize_oracle_image,
+)
 
 from database import (
     create_conversation,
@@ -64,6 +73,12 @@ app = FastAPI(
             "description": (
                 "Conversation lifecycle, message history "
                 "and Agent Session management."
+            ),
+        },
+        {
+            "name": "Oracle Recognition",
+            "description": (
+                "Single-glyph Oracle Bone Script image classification."
             ),
         },
     ],
@@ -247,6 +262,94 @@ def health():
 
     return {
         "status": "ok"
+    }
+
+
+# ============================================================
+# Oracle Bone Script Recognition API
+# ============================================================
+
+MAX_ORACLE_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+@app.get(
+    "/oracle/health",
+    tags=["Oracle Recognition"],
+    summary="Oracle Classifier Health",
+    description=(
+        "Check whether the local single-glyph classifier is configured. "
+        "This endpoint does not load the model checkpoint."
+    ),
+)
+def oracle_health():
+    status = get_model_status()
+    if status["status"] != "ready":
+        raise HTTPException(
+            status_code=503,
+            detail=status["detail"],
+        )
+    return status
+
+
+@app.post(
+    "/oracle/recognize",
+    tags=["Oracle Recognition"],
+    summary="Recognize One Oracle Bone Script Glyph",
+    description=(
+        "Upload one cropped glyph image. The response contains the "
+        "predicted class code, confidence and Top-5 candidates."
+    ),
+)
+async def recognize_oracle(
+    file: UploadFile = File(...)
+):
+    if (
+        file.content_type
+        and not file.content_type.startswith("image/")
+        and file.content_type != "application/octet-stream"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="只支持图片文件。",
+        )
+
+    try:
+        content = await file.read(
+            MAX_ORACLE_UPLOAD_BYTES + 1
+        )
+    finally:
+        await file.close()
+
+    if len(content) > MAX_ORACLE_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="图片不能超过 10 MB。",
+        )
+
+    try:
+        result = await run_in_threadpool(
+            recognize_oracle_image,
+            content,
+        )
+    except OracleImageError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+    except OracleModelUnavailableError as error:
+        raise HTTPException(
+            status_code=503,
+            detail=str(error),
+        ) from error
+    except OracleRecognitionError as error:
+        raise HTTPException(
+            status_code=503,
+            detail=str(error),
+        ) from error
+
+    return {
+        "filename": file.filename,
+        **result,
     }
 
 

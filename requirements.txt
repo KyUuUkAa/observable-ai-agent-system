@@ -8,3 +8,6 @@ asyncpg
 sqlalchemy
 numpy
 sentence-transformers
+pillow
+python-multipart
+ultralytics==8.4.160
