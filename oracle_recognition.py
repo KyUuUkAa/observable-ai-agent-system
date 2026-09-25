@@ -226,7 +226,7 @@ def get_model_status() -> dict:
         }
 
 
-def recognize_oracle_image(content: bytes) -> dict:
+def recognize_oracle_image(content: bytes, *, include_retrieval: bool = True) -> dict:
     """Classify one cropped Oracle Bone Script glyph and return Top-5 predictions."""
 
     image = decode_image(content)
@@ -259,20 +259,17 @@ def recognize_oracle_image(content: bytes) -> dict:
         for index, confidence in zip(indices, confidences)
     ]
 
-    try:
-        with _prediction_lock:
-            embedding = extract_yolo_embedding(get_model(), source)
-        routing, visual_candidates = select_visual_candidates(
-            embedding,
-            top5,
-            confidence=top5[0]["confidence"],
+    if include_retrieval:
+        routing, visual_candidates = retrieve_oracle_candidates(
+            content,
+            {"prediction": top5[0], "top5": top5},
         )
-    except OracleRetrievalUnavailableError as exc:
+    else:
         routing = {
-            "mode": "classification_fallback",
+            "mode": "classification_pending",
             "threshold": get_hybrid_threshold(),
             "classification_confidence": top5[0]["confidence"],
-            "reason": str(exc),
+            "reason": "Agent classification completed; deterministic routing is pending.",
         }
         visual_candidates = []
 
@@ -295,3 +292,38 @@ def recognize_oracle_image(content: bytes) -> dict:
             "visual_candidates": visual_candidates,
         },
     }
+
+
+def retrieve_oracle_candidates(
+    content: bytes,
+    classification: dict,
+    *,
+    limit: int = 5,
+    force: bool = False,
+) -> tuple[dict, list[dict]]:
+    """Retrieve visual evidence for an existing classification result."""
+
+    image = decode_image(content)
+    source = np.asarray(pad_to_square(image)).copy()
+    try:
+        with _prediction_lock:
+            embedding = extract_yolo_embedding(get_model(), source)
+        return select_visual_candidates(
+            embedding,
+            classification["top5"],
+            confidence=float(classification["prediction"]["confidence"]),
+            limit=max(1, min(int(limit), 10)),
+            force_retrieval=force,
+        )
+    except OracleRetrievalUnavailableError as exc:
+        return (
+            {
+                "mode": "classification_fallback",
+                "threshold": get_hybrid_threshold(),
+                "classification_confidence": float(
+                    classification["prediction"]["confidence"]
+                ),
+                "reason": str(exc),
+            },
+            [],
+        )

@@ -31,7 +31,12 @@ Ollama / Qwen3:4B
 Function Tools
   ├── search_resume
   ├── calculator
-  └── recognize_oracle_image
+  ├── recognize_oracle_image
+  ├── retrieve_oracle_candidates
+  ├── query_review_queue
+  ├── update_review_result
+  ├── export_oracle_records
+  └── get_oracle_quality_metrics
   ↓
 PostgreSQL Session
 ```
@@ -81,6 +86,8 @@ parse tool arguments and outputs from Execution Trace
         ↓
 classify correct / false / missed / wrong / duplicate calls
         ↓
+verify filter arguments and answer safety assertions
+        ↓
 aggregate latency, tool errors, and run failures
         ↓
 compare case-level results and pass rate with the baseline
@@ -96,7 +103,11 @@ evaluation/baselines/tool_routing.json   # versioned accepted baseline
 reports/agent_regression/                # ignored generated reports
 ```
 
-Each case declares `expected_tools`, including an empty list for a no-tool query. The report preserves the raw tool trace needed to diagnose wrong arguments, repeated calls, tool errors, and routing regressions. Temporary PostgreSQL Agent sessions are removed after each case; use `--keep-sessions` only when database-level debugging is needed. Use `--case-id` or `--tag` for focused diagnosis, and update the baseline only after reviewing a complete successful run with `--write-baseline`.
+The current suite contains 60 cases. Each case declares `expected_tools`, including an empty list for a no-tool query, and may declare partial `expected_tool_arguments`, expected error paths, required answer terms, or forbidden answer terms. The report preserves the raw tool trace needed to diagnose wrong arguments, repeated calls, tool errors, and routing regressions. Temporary PostgreSQL Agent sessions are removed after each case; use `--keep-sessions` only when database-level debugging is needed. Use `--case-id` or `--tag` for focused diagnosis, and update the baseline only after reviewing a complete successful run with `--write-baseline`.
+
+For explicit source-of-truth intents, the Harness applies a deterministic routing guard: it constrains the run to the required tool schema and retries once if the local model skips the required call. General questions are not forced. This guard makes route failures reproducible without allowing the LLM to answer database queries from memory.
+
+The accepted 60-case baseline currently passes **60/60** with 52 tool calls, zero wrong/missed/duplicate calls, 6.96 s mean latency and 14.46 s P95 latency on the local Qwen3:4B environment. The committed baseline is sanitized and intentionally excludes tool outputs and recognition-record data.
 
 The legacy command remains available and delegates to the same runner:
 

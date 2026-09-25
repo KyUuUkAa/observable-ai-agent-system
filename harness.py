@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from agents import Runner
 from agents.extensions.memory import SQLAlchemySession
 
+from deterministic_routing import argument_hints_for_input, required_tool_for_input
+
 
 # =========================================================
 # 环境变量
@@ -286,11 +288,62 @@ class AgentHarness:
             # 执行 Agent
             # =====================================
 
+            required_tool = required_tool_for_input(user_input)
+            routed_agent = self.agent
+            if required_tool:
+                argument_hints = argument_hints_for_input(user_input)
+                argument_constraint = (
+                    "\nRequired argument mapping: " + "; ".join(argument_hints)
+                    if argument_hints
+                    else ""
+                )
+                route_instruction = (
+                    "\n\n[RUNTIME ROUTE CONSTRAINT]\n"
+                    f"The current request has been deterministically routed to "
+                    f"{required_tool}. Your next action MUST be calling exactly this "
+                    "tool. Do not answer, describe the call, or choose another tool "
+                    "before that call. Extract arguments from the original user input."
+                    + argument_constraint
+                )
+                allowed_tool_names = {required_tool}
+                if required_tool == "recognize_oracle_image":
+                    allowed_tool_names.add("retrieve_oracle_candidates")
+                routed_agent = self.agent.clone(
+                    instructions=str(self.agent.instructions) + route_instruction,
+                    tools=[
+                        tool
+                        for tool in self.agent.tools
+                        if tool.name in allowed_tool_names
+                    ],
+                    model_settings=self.agent.model_settings.resolve(
+                        {"tool_choice": required_tool}
+                    )
+                )
+                print("Deterministic tool route:", required_tool)
+
             result = await Runner.run(
-                self.agent,
+                routed_agent,
                 user_input,
                 session=session
             )
+            if required_tool:
+                first_tool_names = {
+                    log.get("tool_name")
+                    for log in self.extract_tool_logs(result)
+                    if log.get("type") == "tool_call"
+                }
+                if required_tool not in first_tool_names:
+                    print("Required tool was skipped; retrying once:", required_tool)
+                    result = await Runner.run(
+                        routed_agent,
+                        (
+                            "[RUNTIME RETRY] The previous response skipped the "
+                            f"required tool. Call {required_tool} now using the "
+                            "arguments from the user's preceding request. Do not "
+                            "describe the call."
+                        ),
+                        session=session,
+                    )
             agent_latency = (
              time.perf_counter()
                 - agent_start

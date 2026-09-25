@@ -15,7 +15,7 @@ from evaluation.regression_core import (
     write_json_report,
     write_markdown_report,
 )
-from evaluation.agent_regression import execute_case
+from evaluation.agent_regression import build_baseline_snapshot, execute_case
 
 
 def make_run(*tool_names, status="success", latency=1.0):
@@ -86,6 +86,75 @@ class RegressionCoreTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "tool_execution_error")
         self.assertIn("tool_execution_error", result["failure_types"])
+
+    def test_expected_tool_error_can_be_allowed(self):
+        case = {
+            "id": "expected_error",
+            "query": "invalid image",
+            "expected_tools": ["recognize_oracle_image"],
+            "tags": [],
+            "enforce_order": True,
+            "allow_tool_error": True,
+        }
+        run = make_run("recognize_oracle_image")
+        run["tool_logs"][1]["output"] = json.dumps(
+            {"status": "error", "error": "引用已过期"}
+        )
+        result = evaluate_case(case, run)
+
+        self.assertTrue(result["passed"])
+
+    def test_tool_argument_and_output_assertions(self):
+        case = {
+            "id": "filters",
+            "query": "export",
+            "expected_tools": ["export_oracle_records"],
+            "tags": [],
+            "enforce_order": True,
+            "expected_tool_arguments": {
+                "export_oracle_records": {"days": 7, "output_format": "csv"}
+            },
+            "required_output_terms": ["下载"],
+            "forbidden_output_terms": ["现代汉字"],
+        }
+        run = make_run("export_oracle_records")
+        run["tool_logs"][0]["arguments"] = json.dumps(
+            {"days": 30, "output_format": "csv"}
+        )
+        run["output"] = "已生成文件"
+        result = evaluate_case(case, run)
+
+        self.assertEqual(result["status"], "output_assertion_failed")
+        self.assertIn("missing_required_output", result["failure_types"])
+        self.assertIn("tool_argument_mismatch", result["failure_types"])
+
+    def test_effective_default_filters_satisfy_argument_assertion(self):
+        case = {
+            "id": "default_filter",
+            "query": "export all",
+            "expected_tools": ["export_oracle_records"],
+            "tags": [],
+            "enforce_order": True,
+            "expected_tool_arguments": {
+                "export_oracle_records": {
+                    "review_status": "all",
+                    "output_format": "csv",
+                }
+            },
+        }
+        run = make_run("export_oracle_records")
+        run["tool_logs"][0]["arguments"] = json.dumps({"days": 1})
+        run["tool_logs"][1]["output"] = json.dumps(
+            {
+                "status": "success",
+                "format": "csv",
+                "filters": {"review_status": "all", "days": 1},
+            }
+        )
+
+        result = evaluate_case(case, run)
+
+        self.assertTrue(result["passed"])
 
     def test_classification_matrix(self):
         self.assertEqual(classify_tool_calls([], [])[0], "correct")
@@ -185,6 +254,36 @@ class RegressionCoreTests(unittest.TestCase):
         )
 
         self.assertEqual(harness.cleared, [result["conversation_id"]])
+
+    def test_baseline_snapshot_does_not_store_tool_outputs(self):
+        report = {
+            "schema_version": 2,
+            "suite_name": "demo",
+            "generated_at": "now",
+            "summary": {
+                "total_cases": 1,
+                "passed_cases": 1,
+                "failed_cases": 0,
+                "pass_rate": 1.0,
+                "status_counts": {"correct": 1},
+                "failure_type_counts": {},
+                "tool_call_counts": {"query_review_queue": 1},
+                "total_tool_calls": 1,
+                "latency": {},
+            },
+            "cases": [
+                {
+                    "id": "private",
+                    "status": "correct",
+                    "tool_calls": [{"output": "private-record"}],
+                }
+            ],
+        }
+
+        snapshot = build_baseline_snapshot(report)
+
+        self.assertEqual(snapshot["cases"], [{"id": "private", "status": "correct"}])
+        self.assertNotIn("private-record", json.dumps(snapshot))
 
 
 if __name__ == "__main__":

@@ -210,6 +210,7 @@ def select_visual_candidates(
     confidence: float,
     threshold: float | None = None,
     limit: int = 5,
+    force_retrieval: bool = False,
 ) -> tuple[dict, list[dict]]:
     """Route a query to high-confidence classification or long-tail retrieval."""
 
@@ -229,7 +230,7 @@ def select_visual_candidates(
     cutoff = get_hybrid_threshold() if threshold is None else float(threshold)
 
     candidates = []
-    if confidence >= cutoff:
+    if confidence >= cutoff and not force_retrieval:
         mode = "classification"
         reason = "YOLO Top-1 confidence reached the hybrid threshold."
         for prediction in classification_top5[:limit]:
@@ -244,7 +245,11 @@ def select_visual_candidates(
             candidates.append(item)
     else:
         mode = "retrieval"
-        reason = "YOLO Top-1 confidence was below the hybrid threshold."
+        reason = (
+            "Retrieval was explicitly requested by the user."
+            if force_retrieval and confidence >= cutoff
+            else "YOLO Top-1 confidence was below the hybrid threshold."
+        )
         seen_classes: set[str] = set()
         for item_index in np.argsort(scores)[::-1]:
             class_code = str(index.class_codes[item_index])

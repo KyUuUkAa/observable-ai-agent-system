@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import io
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -26,6 +27,36 @@ DEFAULT_BASELINE = (
     / "tool_routing.json"
 )
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "reports" / "agent_regression"
+
+
+def build_baseline_snapshot(report: dict) -> dict:
+    """Keep regression evidence without persisting tool outputs or record data."""
+
+    summary = report["summary"]
+    return {
+        "schema_version": report.get("schema_version"),
+        "suite_name": report.get("suite_name"),
+        "generated_at": report.get("generated_at"),
+        "notes": "Sanitized accepted Agent regression baseline.",
+        "summary": {
+            key: summary.get(key)
+            for key in (
+                "total_cases",
+                "passed_cases",
+                "failed_cases",
+                "pass_rate",
+                "status_counts",
+                "failure_type_counts",
+                "tool_call_counts",
+                "total_tool_calls",
+                "latency",
+            )
+        },
+        "cases": [
+            {"id": case["id"], "status": case["status"]}
+            for case in report.get("cases", [])
+        ],
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -106,10 +137,24 @@ async def execute_case(
     keep_session: bool = False,
 ) -> dict:
     conversation_id = str(uuid.uuid4())
+    user_input = case["query"]
+    if "{{oracle_image_id}}" in user_input:
+        from PIL import Image, ImageDraw
+
+        from oracle_recognition import cache_oracle_image
+
+        image = Image.new("RGB", (224, 224), "white")
+        draw = ImageDraw.Draw(image)
+        draw.line((72, 38, 152, 186), fill="black", width=9)
+        draw.line((151, 40, 74, 184), fill="black", width=9)
+        image_buffer = io.BytesIO()
+        image.save(image_buffer, format="PNG")
+        image_id = cache_oracle_image(image_buffer.getvalue())
+        user_input = user_input.replace("{{oracle_image_id}}", image_id)
     try:
         run_result = await asyncio.wait_for(
             harness.run(
-                user_input=case["query"],
+                user_input=user_input,
                 conversation_id=conversation_id,
             ),
             timeout=timeout_seconds,
@@ -203,7 +248,7 @@ async def run_pipeline(args: argparse.Namespace) -> tuple[dict, Path, Path]:
     write_markdown_report(report, args.output_dir / "latest.md")
 
     if args.write_baseline:
-        write_json_report(report, args.write_baseline)
+        write_json_report(build_baseline_snapshot(report), args.write_baseline)
 
     return report, json_path, markdown_path
 

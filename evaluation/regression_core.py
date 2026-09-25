@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 CORRECT_STATUS = "correct"
 
 
@@ -58,6 +58,16 @@ def load_case_suite(path: str | Path) -> dict:
                 "expected_tools": [tool.strip() for tool in expected_tools],
                 "tags": [str(tag) for tag in raw_case.get("tags", [])],
                 "enforce_order": bool(raw_case.get("enforce_order", True)),
+                "allow_tool_error": bool(raw_case.get("allow_tool_error", False)),
+                "required_output_terms": [
+                    str(term) for term in raw_case.get("required_output_terms", [])
+                ],
+                "forbidden_output_terms": [
+                    str(term) for term in raw_case.get("forbidden_output_terms", [])
+                ],
+                "expected_tool_arguments": raw_case.get(
+                    "expected_tool_arguments", {}
+                ),
             }
         )
 
@@ -207,10 +217,77 @@ def evaluate_case(case: dict, run_result: dict) -> dict:
         )
 
         tool_error = any(_tool_call_has_error(call) for call in tool_calls)
-        if tool_error:
+        if tool_error and not case.get("allow_tool_error", False):
             failure_types.append("tool_execution_error")
             if status == CORRECT_STATUS:
                 status = "tool_execution_error"
+
+        output_text = str(run_result.get("output") or "")
+        missing_output_terms = [
+            term
+            for term in case.get("required_output_terms", [])
+            if term.casefold() not in output_text.casefold()
+        ]
+        forbidden_output_terms = [
+            term
+            for term in case.get("forbidden_output_terms", [])
+            if term.casefold() in output_text.casefold()
+        ]
+        if missing_output_terms:
+            failure_types.append("missing_required_output")
+            if status == CORRECT_STATUS:
+                status = "output_assertion_failed"
+        if forbidden_output_terms:
+            failure_types.append("forbidden_output")
+            if status == CORRECT_STATUS:
+                status = "output_assertion_failed"
+
+        argument_mismatches = []
+        for tool_name, expected_arguments in case.get(
+            "expected_tool_arguments", {}
+        ).items():
+            matching_call = next(
+                (call for call in tool_calls if call["name"] == tool_name),
+                None,
+            )
+            actual_arguments = (
+                matching_call.get("arguments") if matching_call else None
+            )
+            if not isinstance(actual_arguments, dict):
+                argument_mismatches.append(
+                    {"tool": tool_name, "expected": expected_arguments, "actual": actual_arguments}
+                )
+                continue
+            output = matching_call.get("output") if matching_call else None
+            effective_filters = (
+                output.get("filters", {}) if isinstance(output, dict) else {}
+            )
+            effective_arguments = {
+                **effective_filters,
+                **actual_arguments,
+            }
+            if isinstance(output, dict) and "format" in output:
+                effective_arguments.setdefault("output_format", output["format"])
+            mismatched_keys = {
+                key: {
+                    "expected": value,
+                    "actual": effective_arguments.get(key),
+                }
+                for key, value in expected_arguments.items()
+                if (
+                    effective_arguments.get(key) not in value
+                    if isinstance(value, list)
+                    else effective_arguments.get(key) != value
+                )
+            }
+            if mismatched_keys:
+                argument_mismatches.append(
+                    {"tool": tool_name, "keys": mismatched_keys}
+                )
+        if argument_mismatches:
+            failure_types.append("tool_argument_mismatch")
+            if status == CORRECT_STATUS:
+                status = "tool_argument_mismatch"
 
     if run_result.get("session_cleanup_error"):
         failure_types.append("session_cleanup_error")
@@ -226,6 +303,9 @@ def evaluate_case(case: dict, run_result: dict) -> dict:
         "tool_calls": tool_calls,
         "status": status,
         "failure_types": failure_types,
+        "missing_output_terms": missing_output_terms if run_result.get("status") == "success" else [],
+        "forbidden_output_terms": forbidden_output_terms if run_result.get("status") == "success" else [],
+        "argument_mismatches": argument_mismatches if run_result.get("status") == "success" else [],
         "passed": status == CORRECT_STATUS,
         "run_id": run_result.get("run_id"),
         "conversation_id": run_result.get("conversation_id"),
@@ -319,6 +399,7 @@ def compare_with_baseline(
             baseline_report.get("results", []),
         )
     }
+    case_sets_match = current_cases.keys() == baseline_cases.keys()
 
     regressions = []
     improvements = []
@@ -334,14 +415,16 @@ def compare_with_baseline(
                 {"id": case_id, "before": before, "after": after}
             )
 
-    pass_rate_before = baseline_summary.get("pass_rate")
+    pass_rate_before = (
+        baseline_summary.get("pass_rate") if case_sets_match else None
+    )
     pass_rate_after = current_summary.get("pass_rate")
     pass_rate_delta = None
     if isinstance(pass_rate_before, (int, float)):
         pass_rate_delta = pass_rate_after - float(pass_rate_before)
 
     latency_comparisons = {}
-    for metric in ("mean_seconds", "p95_seconds"):
+    for metric in ("mean_seconds", "p95_seconds") if case_sets_match else ():
         before = baseline_summary.get("latency", {}).get(metric)
         after = current_summary.get("latency", {}).get(metric)
         if isinstance(before, (int, float)) and isinstance(after, (int, float)):
@@ -363,6 +446,8 @@ def compare_with_baseline(
 
     if regressions or metric_regression:
         status = "regressed"
+    elif not case_sets_match:
+        status = "expanded"
     elif improvements or (pass_rate_delta is not None and pass_rate_delta > 0):
         status = "improved"
     else:
@@ -371,6 +456,7 @@ def compare_with_baseline(
     return {
         "status": status,
         "latency_tolerance": latency_tolerance,
+        "case_sets_match": case_sets_match,
         "pass_rate": {
             "before": pass_rate_before,
             "after": pass_rate_after,

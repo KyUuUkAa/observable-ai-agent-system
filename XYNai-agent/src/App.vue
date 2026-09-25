@@ -142,6 +142,33 @@ interface OracleReviewSummary {
   rejected: number
 }
 
+interface OracleQualityMetrics {
+  classification: {
+    images: number
+    classes: number
+    top1_accuracy: number
+    top5_accuracy: number
+    macro_f1: number
+  } | null
+  hybrid_calibration: {
+    hybrid_threshold: number
+    thresholds: Array<{
+      threshold: number
+      coverage: number
+      selective_accuracy: number
+      false_accept_rate_among_accepted: number
+    }>
+  } | null
+  agent_regression: {
+    summary: {
+      total_cases: number
+      passed_cases: number
+      pass_rate: number
+      total_tool_calls: number
+    }
+  } | null
+}
+
 // ========================================
 // 页面状态
 // ========================================
@@ -202,6 +229,8 @@ const oracleReviewSummary = ref<OracleReviewSummary>({
   accepted: 0,
   rejected: 0,
 })
+
+const oracleQualityMetrics = ref<OracleQualityMetrics | null>(null)
 
 // ========================================
 // 是否允许发送
@@ -719,6 +748,18 @@ async function loadOracleReviewSummary() {
   }
 }
 
+async function loadOracleQualityMetrics() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/oracle/metrics`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    oracleQualityMetrics.value = (await response.json()) as OracleQualityMetrics
+  } catch (error) {
+    console.error('加载质量指标失败:', error)
+  }
+}
+
 async function loadOracleRecords() {
   oracleRecordsLoading.value = true
   oracleError.value = ''
@@ -732,6 +773,7 @@ async function loadOracleRecords() {
     const [recordsResponse] = await Promise.all([
       fetch(`${API_BASE_URL}/oracle/records?${params.toString()}`),
       loadOracleReviewSummary(),
+      loadOracleQualityMetrics(),
     ])
     const data = await recordsResponse.json()
     if (!recordsResponse.ok) {
@@ -794,6 +836,20 @@ function formatOracleDate(value: string) {
     dateStyle: 'short',
     timeStyle: 'medium',
   }).format(new Date(value))
+}
+
+function formatMetricPercent(value: number | undefined) {
+  return typeof value === 'number' ? `${(value * 100).toFixed(2)}%` : '暂无'
+}
+
+function calibratedThresholdMetric() {
+  const calibration = oracleQualityMetrics.value?.hybrid_calibration
+  if (!calibration) {
+    return null
+  }
+  return calibration.thresholds.find(
+    (item) => Math.abs(item.threshold - calibration.hybrid_threshold) < 0.0001,
+  )
 }
 
 function oracleReviewLabel(status: OracleReviewStatus) {
@@ -1116,6 +1172,63 @@ onBeforeUnmount(() => {
               <h2>批量整理与人工复核</h2>
               <p>批量上传裁剪后的单字图；低于置信度阈值的结果会自动进入待复核队列。</p>
             </div>
+
+            <section class="oracle-metrics-panel">
+              <div class="oracle-section-heading">
+                <div>
+                  <span class="oracle-kicker"> Quality Evidence </span>
+                  <h3>模型与 Agent 质量指标</h3>
+                </div>
+                <small>来自本地测试集与最新回归报告</small>
+              </div>
+              <div class="oracle-metrics-grid">
+                <div>
+                  <span>分类 Top‑1</span>
+                  <strong>
+                    {{ formatMetricPercent(oracleQualityMetrics?.classification?.top1_accuracy) }}
+                  </strong>
+                  <small>
+                    {{ oracleQualityMetrics?.classification?.images ?? '—' }} 张测试图 ·
+                    {{ oracleQualityMetrics?.classification?.classes ?? '—' }} 类
+                  </small>
+                </div>
+                <div>
+                  <span>分类 Top‑5</span>
+                  <strong>
+                    {{ formatMetricPercent(oracleQualityMetrics?.classification?.top5_accuracy) }}
+                  </strong>
+                  <small>
+                    Macro‑F1
+                    {{ formatMetricPercent(oracleQualityMetrics?.classification?.macro_f1) }}
+                  </small>
+                </div>
+                <div>
+                  <span>高置信度自动覆盖</span>
+                  <strong>{{ formatMetricPercent(calibratedThresholdMetric()?.coverage) }}</strong>
+                  <small>
+                    通过结果准确率
+                    {{ formatMetricPercent(calibratedThresholdMetric()?.selective_accuracy) }}
+                  </small>
+                </div>
+                <div>
+                  <span>Agent 回归</span>
+                  <strong>
+                    {{ oracleQualityMetrics?.agent_regression?.summary.passed_cases ?? '—' }}/{{
+                      oracleQualityMetrics?.agent_regression?.summary.total_cases ?? '—'
+                    }}
+                  </strong>
+                  <small>
+                    通过率
+                    {{
+                      formatMetricPercent(oracleQualityMetrics?.agent_regression?.summary.pass_rate)
+                    }}
+                  </small>
+                </div>
+              </div>
+              <p v-if="!oracleQualityMetrics?.classification" class="oracle-metrics-empty">
+                尚未生成评估报告；运行评估脚本后此处会自动显示真实数据。
+              </p>
+            </section>
 
             <section class="oracle-batch-panel">
               <label class="oracle-batch-picker">
@@ -2121,6 +2234,66 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
+.oracle-metrics-panel {
+  margin-bottom: 22px;
+  padding: 18px;
+  border: 1px solid #eadfce;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fffbeb, #ffffff);
+}
+
+.oracle-section-heading {
+  margin-bottom: 14px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.oracle-section-heading h3 {
+  margin: 4px 0 0;
+  color: #111827;
+  font-size: 16px;
+}
+
+.oracle-section-heading small,
+.oracle-metrics-grid small,
+.oracle-metrics-empty {
+  color: #78716c;
+  font-size: 11px;
+}
+
+.oracle-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.oracle-metrics-grid > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #eee7dc;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.88);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.oracle-metrics-grid span {
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.oracle-metrics-grid strong {
+  color: #78350f;
+  font-size: 20px;
+}
+
+.oracle-metrics-empty {
+  margin: 12px 0 0;
+}
+
 .oracle-batch-panel {
   margin-bottom: 22px;
   padding: 18px;
@@ -2787,7 +2960,8 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .oracle-summary-grid {
+  .oracle-summary-grid,
+  .oracle-metrics-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }

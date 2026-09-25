@@ -60,6 +60,10 @@ evaluation/reports/
 runs/
 weights/
 
+# Local Oracle font/archive references; not part of the verified dictionary
+/甲骨字体库.zip
+/甲骨文字体库.ttf
+
 # Node / Vue
 node_modules/
 dist/

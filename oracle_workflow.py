@@ -78,6 +78,9 @@ def oracle_records_to_csv(records: Iterable[dict]) -> str:
         "top1_class_code",
         "top1_confidence",
         "top5",
+        "routing_mode",
+        "retrieval_top1_class",
+        "classification_retrieval_conflict",
         "model_version",
         "review_threshold",
         "review_status",
@@ -91,12 +94,25 @@ def oracle_records_to_csv(records: Iterable[dict]) -> str:
     writer.writeheader()
 
     for record in records:
+        normalized = {
+            **record,
+            "id": record.get("id", record.get("record_id")),
+            "original_filename": record.get(
+                "original_filename", record.get("filename")
+            ),
+            "top1_class_code": record.get(
+                "top1_class_code", record.get("class_code")
+            ),
+            "top1_confidence": record.get(
+                "top1_confidence", record.get("confidence")
+            ),
+        }
         writer.writerow(
             {
                 key: (
-                    json.dumps(record.get(key), ensure_ascii=False)
-                    if key == "top5"
-                    else record.get(key)
+                    json.dumps(normalized.get(key), ensure_ascii=False)
+                    if isinstance(normalized.get(key), (list, dict))
+                    else normalized.get(key)
                 )
                 for key in fieldnames
             }

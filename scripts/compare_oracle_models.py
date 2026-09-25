@@ -5,6 +5,7 @@ import hashlib
 import json
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 import torch
@@ -125,13 +126,14 @@ def render_markdown(report: dict) -> str:
         f"Shared classes: **{report['shared_classes']}**  ",
         f"Test images: **{report['images']}**",
         "",
-        "| Model | Native classes | Top-1 | Top-5 | Macro-F1 | ms/image |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Model | Native classes | Top-1 | Top-5 | Macro-F1 | Errors | ms/image |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for item in report["models"]:
         lines.append(
             "| {name} | {native_classes} | {top1_accuracy:.2%} | "
-            "{top5_accuracy:.2%} | {macro_f1:.2%} | {milliseconds_per_image:.3f} |".format(
+            "{top5_accuracy:.2%} | {macro_f1:.2%} | {error_count} | "
+            "{milliseconds_per_image:.3f} |".format(
                 **item
             )
         )
@@ -203,6 +205,12 @@ def main() -> int:
             predicted == truth
             for predicted, truth in zip(predicted_codes, true_codes)
         )
+        confusions = Counter(
+            (truth, predicted)
+            for truth, predicted in zip(true_codes, predicted_codes)
+            if truth != predicted
+        )
+        error_count = len(true_codes) - top1
         results.append(
             {
                 "name": name,
@@ -211,6 +219,16 @@ def main() -> int:
                 "native_classes": len(wrapper.names),
                 "top1_accuracy": top1 / len(true_codes),
                 "top5_accuracy": top5_correct / len(true_codes),
+                "error_count": error_count,
+                "error_rate": error_count / len(true_codes),
+                "top_confusions": [
+                    {
+                        "true_class": truth,
+                        "predicted_class": predicted,
+                        "count": count,
+                    }
+                    for (truth, predicted), count in confusions.most_common(10)
+                ],
                 **macro_metrics(true_codes, predicted_codes, sorted(shared_classes)),
                 "elapsed_seconds": round(elapsed, 3),
                 "milliseconds_per_image": elapsed * 1000 / len(true_codes),

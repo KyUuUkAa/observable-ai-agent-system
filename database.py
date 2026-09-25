@@ -512,6 +512,11 @@ def list_oracle_recognition_records(
     *,
     review_status: str | None = None,
     class_code: str | None = None,
+    min_confidence: float | None = None,
+    max_confidence: float | None = None,
+    created_after=None,
+    conflicts_only: bool = False,
+    model_version: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ):
@@ -527,6 +532,42 @@ def list_oracle_recognition_records(
     if class_code:
         conditions.append("top1_class_code = %s")
         parameters.append(class_code)
+
+    if min_confidence is not None:
+        if not 0 <= float(min_confidence) <= 1:
+            raise ValueError("最低置信度必须在 0 到 1 之间。")
+        conditions.append("top1_confidence >= %s")
+        parameters.append(float(min_confidence))
+
+    if max_confidence is not None:
+        if not 0 <= float(max_confidence) <= 1:
+            raise ValueError("最高置信度必须在 0 到 1 之间。")
+        conditions.append("top1_confidence <= %s")
+        parameters.append(float(max_confidence))
+
+    if (
+        min_confidence is not None
+        and max_confidence is not None
+        and float(min_confidence) > float(max_confidence)
+    ):
+        raise ValueError("最低置信度不能高于最高置信度。")
+
+    if created_after is not None:
+        conditions.append("created_at >= %s")
+        parameters.append(created_after)
+
+    if model_version:
+        conditions.append("model_version = %s")
+        parameters.append(model_version)
+
+    if conflicts_only:
+        conditions.extend(
+            [
+                "jsonb_typeof(model_info->'visual_candidates') = 'array'",
+                "jsonb_array_length(model_info->'visual_candidates') > 0",
+                "model_info->'visual_candidates'->0->>'class_code' <> top1_class_code",
+            ]
+        )
 
     where_clause = (
         "WHERE " + " AND ".join(conditions)
@@ -562,6 +603,21 @@ def get_oracle_recognition_record(record_id: str):
             cursor.execute(sql, (record_id,))
             row = cursor.fetchone()
 
+    return _serialize_oracle_record(row)
+
+
+def get_oracle_record_by_image_reference(image_reference_id: str):
+    sql = f"""
+    SELECT {ORACLE_RECORD_SELECT}
+    FROM oracle_recognition_records
+    WHERE image_reference_id = %s
+    ORDER BY created_at DESC
+    LIMIT 1;
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (image_reference_id,))
+            row = cursor.fetchone()
     return _serialize_oracle_record(row)
 
 
@@ -675,6 +731,38 @@ def get_oracle_review_summary():
         counts[status] = count
     counts["total"] = sum(counts.values())
     return counts
+
+
+def get_oracle_model_version_summary():
+    sql = """
+    SELECT
+        model_version,
+        COUNT(*) AS total,
+        AVG(top1_confidence) AS average_confidence,
+        COUNT(*) FILTER (WHERE review_status = 'pending') AS pending,
+        COUNT(*) FILTER (WHERE review_status = 'auto_accepted') AS auto_accepted,
+        COUNT(*) FILTER (WHERE review_status = 'accepted') AS accepted,
+        COUNT(*) FILTER (WHERE review_status = 'rejected') AS rejected
+    FROM oracle_recognition_records
+    GROUP BY model_version
+    ORDER BY total DESC, model_version;
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+    return [
+        {
+            "model_version": row[0],
+            "total": row[1],
+            "average_confidence": float(row[2]),
+            "pending": row[3],
+            "auto_accepted": row[4],
+            "accepted": row[5],
+            "rejected": row[6],
+        }
+        for row in rows
+    ]
 
 if __name__ == "__main__":
 

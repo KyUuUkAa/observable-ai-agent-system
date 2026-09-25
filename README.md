@@ -114,6 +114,8 @@ Main endpoints:
 | GET | `/oracle/records` | List and filter recognition records |
 | PATCH | `/oracle/records/{record_id}/review` | Confirm or reject a recognition result |
 | GET | `/oracle/records/export` | Export filtered records as CSV or JSON |
+| GET | `/oracle/exports/{export_id}` | Download an export created by the Agent |
+| GET | `/oracle/metrics` | Read model, calibration, review and Agent regression metrics |
 
 When the backend is running locally, the interactive API documentation is available at:
 
@@ -184,7 +186,8 @@ Advantages include:
 
 ## 3. Function Tool Calling
 
-The current Agent contains three primary tools.
+The current Agent exposes eight tools. Five Oracle domain tools turn the image
+classifier into a records-management workflow instead of a one-shot demo.
 
 ### `search_resume`
 
@@ -238,6 +241,16 @@ Classifies one Oracle Bone Script glyph that was uploaded through the validated 
 
 The tool returns the predicted dataset class code, confidence and Top-5 candidates. Because the current delivery does not include a verified code-to-modern-character dictionary, the Agent is instructed not to invent a character or interpretation.
 
+### Oracle curation tools
+
+| Tool | Responsibility |
+|---|---|
+| `retrieve_oracle_candidates` | Retrieve similar glyph forms and paired rubbings after classification |
+| `query_review_queue` | Query records by review state, class code, confidence, date and conflict state |
+| `update_review_result` | Confirm or reject one record only after an explicit user decision |
+| `export_oracle_records` | Generate a filtered CSV or JSON export with a safe download ID |
+| `get_oracle_quality_metrics` | Summarize classifier, calibration, model-comparison and Agent regression evidence |
+
 Frontend flow:
 
 ```text
@@ -254,13 +267,19 @@ Execution Trace records the tool call and output
 
 ## 4. Oracle Digitization Workflow
 
-The Oracle module is designed as an assisted curation workflow rather than an automatic decipherment claim:
+The Oracle module is designed as an assisted curation workflow rather than an automatic decipherment claim. Tool order is constrained by a deterministic state machine; Qwen understands the request and explains evidence, while code and calibrated thresholds control routing:
 
 ```text
 Single or batch upload
         ↓
 Top-1 / Top-5 classification
         ↓
+Confidence >= 0.85?
+        ├── yes: retain classification result
+        └── no: retrieve similar glyph/rubbing evidence once
+                         ↓
+              mark classification/retrieval conflict
+                         ↓
 PostgreSQL record + model fingerprint + trace
         ↓
 Low-confidence result enters the review queue
@@ -271,6 +290,18 @@ Filtered CSV / JSON export
 ```
 
 The default review threshold is `0.85` and can be changed with `ORACLE_REVIEW_THRESHOLD`. Original images, predictions, confidence, model version, timestamps, review decisions, and the later Agent execution trace are kept together for auditability.
+
+Explicit source-of-truth requests also pass through a high-precision runtime router. It constrains obvious record queries, exports, review updates, image attachments and personal-resume questions to the required tool, exposes only the relevant tool schema, and retries one skipped required call. Ambiguous or general questions remain under normal LLM routing. This prevents the local model from answering a database question without querying PostgreSQL.
+
+Natural-language requests include:
+
+```text
+找出今天置信度低于0.85的记录
+查看类别001000的全部识别结果
+哪些结果出现了分类与检索冲突？
+导出本周待复核记录为CSV
+比较两个模型版本的质量指标
+```
 
 ---
 
@@ -509,6 +540,13 @@ Detailed methodology and results are documented in:
 
 ## 1. Tool Selection Evaluation
 
+The original 12-case benchmark established the baseline for resume RAG,
+calculator and no-tool routing. The current regression suite contains **60
+cases** and additionally covers all five Oracle domain tools, deterministic
+classification-to-retrieval order, confidence/date/class filters, review
+updates, export arguments, invalid image references and the no-dictionary
+hallucination guard.
+
 A manually constructed benchmark was used to evaluate whether the Agent correctly selects among:
 
 ```text
@@ -517,7 +555,7 @@ calculator
 no tool
 ```
 
-The benchmark contains:
+The original benchmark contained:
 
 ```text
 12 evaluation cases
@@ -557,6 +595,28 @@ A runtime-level termination strategy was then implemented for deterministic calc
 | Calculator mean latency | 22.12 s | **4.53 s** |
 | Tool Selection Accuracy | - | **100%** |
 | Evaluation Cases | - | 12 |
+
+The current suite reports route failures separately as wrong, missed, false or
+duplicate tool calls. It also verifies partial tool arguments and answer-text
+assertions, so a correctly named export tool with the wrong date/status filter
+still fails the regression case.
+
+The model comparison report also records error counts and the ten most common
+`true_class → predicted_class` confusions for each checkpoint on the same shared
+test set. This makes “compare model versions” a reproducible evidence query
+rather than a prose-only claim.
+
+Latest accepted multi-tool regression baseline:
+
+| Metric | Result |
+|---|---:|
+| Cases | 60 |
+| Passed | 60 |
+| Pass rate | **100%** |
+| Tool calls | 52 |
+| Wrong / missed / duplicate calls | **0 / 0 / 0** |
+| Mean latency | 6.96 s |
+| P95 latency | 14.46 s |
 
 Calculator latency was reduced by approximately:
 
@@ -1352,7 +1412,7 @@ Run the versioned JSON case suite, compare it with the committed baseline, and g
 python -m evaluation.agent_regression --fail-on-regression --fail-on-case-failure
 ```
 
-The pipeline reads `evaluation/cases/tool_routing.json`, runs every case through the real Agent, parses the execution trace, detects correct/wrong/missed/false/duplicate tool calls, aggregates latency and failure types, and compares the result with `evaluation/baselines/tool_routing.json`. Temporary database sessions are removed after each case unless `--keep-sessions` is supplied. Generated reports are written to the ignored `reports/agent_regression/` directory.
+The pipeline reads the 60 cases in `evaluation/cases/tool_routing.json`, runs every case through the real Agent, parses the execution trace, detects correct/wrong/missed/false/duplicate tool calls, verifies selected tool arguments and safety assertions, aggregates latency and failure types, and compares the result with `evaluation/baselines/tool_routing.json`. Temporary database sessions are removed after each case unless `--keep-sessions` is supplied. Generated reports are written to the ignored `reports/agent_regression/` directory and the latest summary is displayed in the frontend quality dashboard.
 
 Useful options:
 

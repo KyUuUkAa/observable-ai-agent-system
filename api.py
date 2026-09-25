@@ -40,6 +40,7 @@ from oracle_hybrid import (
     OracleRetrievalUnavailableError,
     get_candidate_image,
 )
+from oracle_domain_service import get_oracle_export, get_oracle_quality_metrics
 from oracle_workflow import (
     MAX_BATCH_FILES,
     build_recognition_trace,
@@ -555,6 +556,34 @@ def oracle_candidate_image(candidate_id: str, kind: Literal["glyph", "rubbing"])
 )
 def oracle_review_summary():
     return get_oracle_review_summary()
+
+
+@app.get(
+    "/oracle/metrics",
+    tags=["Oracle Recognition"],
+    summary="Get Oracle Workflow Quality Metrics",
+)
+def oracle_quality_metrics():
+    """Return the latest reproducible model, calibration and Agent metrics."""
+
+    return get_oracle_quality_metrics()
+
+
+@app.get(
+    "/oracle/exports/{export_id}",
+    tags=["Oracle Recognition"],
+    summary="Download An Agent-created Oracle Export",
+)
+def download_oracle_export(export_id: str):
+    try:
+        content, media_type, filename = get_oracle_export(export_id)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get(

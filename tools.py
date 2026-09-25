@@ -1,14 +1,32 @@
 import json
 import time
+from uuid import UUID
 
 from agents import function_tool
 
 from rag import search_resume_rag
+from database import (
+    get_oracle_record_by_image_reference,
+    update_oracle_review,
+)
+from oracle_agent_workflow import (
+    OracleWorkflowTransitionError,
+    complete_retrieval,
+    register_classification,
+    require_retrieval,
+)
+from oracle_domain_service import (
+    create_oracle_export,
+    get_oracle_quality_metrics as load_oracle_quality_metrics,
+    query_oracle_records,
+)
+from oracle_hybrid import get_hybrid_threshold
 from oracle_recognition import (
     OracleImageReferenceError,
     OracleRecognitionError,
     get_cached_oracle_image,
     recognize_oracle_image as classify_oracle_image,
+    retrieve_oracle_candidates as retrieve_visual_candidates,
 )
 
 
@@ -157,11 +175,24 @@ def recognize_oracle_image(image_id: str) -> str:
 
     try:
         content = get_cached_oracle_image(image_id)
-        result = classify_oracle_image(content)
+        result = classify_oracle_image(content, include_retrieval=False)
+        workflow = register_classification(
+            image_id,
+            result,
+            threshold=get_hybrid_threshold(),
+        )
+        record = get_oracle_record_by_image_reference(image_id)
         return json.dumps(
             {
                 "status": "success",
                 "notice": "类别编码尚未映射到现代汉字或释义。",
+                "record_id": record["id"] if record else None,
+                "workflow": workflow.safe_summary(),
+                "next_action": (
+                    "call retrieve_oracle_candidates once"
+                    if workflow.stage.value == "classified_low_confidence"
+                    else "answer with classification evidence"
+                ),
                 **result,
             },
             ensure_ascii=False,
@@ -185,3 +216,185 @@ def recognize_oracle_image(image_id: str) -> str:
     finally:
         latency = time.perf_counter() - start_time
         print(f"[PERF] recognize_oracle_image: {latency:.4f}s")
+
+
+@function_tool
+def retrieve_oracle_candidates(
+    image_id: str,
+    limit: int = 5,
+    force: bool = False,
+) -> str:
+    """检索与已识别图片相似的字模和代表拓片。
+
+    必须先调用 recognize_oracle_image。低置信度结果允许自动检索；只有用户明确
+    要求查看相似字模时，才可以将 force 设为 true。对同一图片只能调用一次。
+    """
+
+    started = time.perf_counter()
+    try:
+        workflow = require_retrieval(image_id, force=force)
+        content = get_cached_oracle_image(image_id)
+        routing, candidates = retrieve_visual_candidates(
+            content,
+            workflow.classification,
+            limit=limit,
+            force=force,
+        )
+        completed = complete_retrieval(
+            image_id,
+            candidates,
+            forced=force,
+        )
+        return json.dumps(
+            {
+                "status": "success",
+                "routing": routing,
+                "candidates": candidates,
+                "workflow": completed.safe_summary(),
+                "notice": "候选仅用于图形比对，不代表现代汉字释义。",
+            },
+            ensure_ascii=False,
+        )
+    except (
+        OracleImageReferenceError,
+        OracleRecognitionError,
+        OracleWorkflowTransitionError,
+    ) as error:
+        return json.dumps(
+            {"status": "error", "error": str(error)},
+            ensure_ascii=False,
+        )
+    finally:
+        print(
+            f"[PERF] retrieve_oracle_candidates: "
+            f"{time.perf_counter() - started:.4f}s"
+        )
+
+
+@function_tool
+def query_review_queue(
+    review_status: str = "all",
+    class_code: str = "",
+    min_confidence: float = 0.0,
+    max_confidence: float = 1.0,
+    days: int = 30,
+    conflicts_only: bool = False,
+    limit: int = 20,
+) -> str:
+    """按复核状态、类别、置信度、时间和分类/检索冲突查询识别记录。
+
+    review_status 默认 all；待复核=pending，高置信度自动通过=auto_accepted，
+    人工确认=accepted，驳回=rejected。今天必须传 days=1，本周传 days=7。
+    """
+
+    try:
+        records = query_oracle_records(
+            review_status=review_status,
+            class_code=class_code,
+            min_confidence=min_confidence,
+            max_confidence=max_confidence,
+            days=days,
+            conflicts_only=conflicts_only,
+            limit=limit,
+        )
+        return json.dumps(
+            {
+                "status": "success",
+                "count": len(records),
+                "records": records,
+                "filters": {
+                    "review_status": review_status,
+                    "class_code": class_code or None,
+                    "min_confidence": min_confidence,
+                    "max_confidence": max_confidence,
+                    "days": days,
+                    "conflicts_only": conflicts_only,
+                },
+            },
+            ensure_ascii=False,
+        )
+    except ValueError as error:
+        return json.dumps({"status": "error", "error": str(error)}, ensure_ascii=False)
+
+
+@function_tool
+def update_review_result(
+    record_id: str,
+    status: str,
+    notes: str = "",
+) -> str:
+    """在用户明确要求后，将一条识别记录确认或驳回。
+
+    status 只允许 accepted 或 rejected。不得根据模型输出自行替用户复核。
+    """
+
+    normalized = status.strip().lower()
+    if normalized not in {"accepted", "rejected"}:
+        return json.dumps(
+            {"status": "error", "error": "复核操作只允许 accepted 或 rejected。"},
+            ensure_ascii=False,
+        )
+    try:
+        normalized_record_id = str(UUID(record_id))
+    except ValueError:
+        return json.dumps(
+            {"status": "error", "error": "record_id 必须是有效的 UUID。"},
+            ensure_ascii=False,
+        )
+    record = update_oracle_review(
+        normalized_record_id,
+        review_status=normalized,
+        review_notes=notes.strip() or None,
+    )
+    if record is None:
+        return json.dumps(
+            {"status": "not_found", "record_id": record_id},
+            ensure_ascii=False,
+        )
+    return json.dumps(
+        {
+            "status": "success",
+            "record_id": record["id"],
+            "review_status": record["review_status"],
+            "review_notes": record["review_notes"],
+            "reviewed_at": record["reviewed_at"],
+        },
+        ensure_ascii=False,
+    )
+
+
+@function_tool
+def export_oracle_records(
+    output_format: str = "csv",
+    review_status: str = "all",
+    class_code: str = "",
+    min_confidence: float = 0.0,
+    max_confidence: float = 1.0,
+    days: int = 30,
+    conflicts_only: bool = False,
+) -> str:
+    """按指定过滤条件生成甲骨文识别记录 CSV 或 JSON 导出文件。"""
+
+    try:
+        result = create_oracle_export(
+            output_format=output_format,
+            review_status=review_status,
+            class_code=class_code,
+            min_confidence=min_confidence,
+            max_confidence=max_confidence,
+            days=days,
+            conflicts_only=conflicts_only,
+        )
+        return json.dumps({"status": "success", **result}, ensure_ascii=False)
+    except ValueError as error:
+        return json.dumps({"status": "error", "error": str(error)}, ensure_ascii=False)
+
+
+@function_tool
+def get_oracle_quality_metrics() -> str:
+    """查询分类、检索、置信度校准、模型版本和Agent回归评估指标。"""
+
+    return json.dumps(
+        {"status": "success", **load_oracle_quality_metrics()},
+        ensure_ascii=False,
+    )
