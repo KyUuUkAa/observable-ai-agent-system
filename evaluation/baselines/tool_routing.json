@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "suite_name": "tool-routing",
+  "generated_at": "documented-baseline",
+  "notes": "Documented 12-case baseline after calculator runtime termination optimization.",
+  "summary": {
+    "total_cases": 12,
+    "passed_cases": 12,
+    "failed_cases": 0,
+    "pass_rate": 1.0,
+    "status_counts": {
+      "correct": 12
+    },
+    "failure_type_counts": {},
+    "latency": {}
+  },
+  "cases": [
+    {"id": "rag_01", "status": "correct"},
+    {"id": "rag_02", "status": "correct"},
+    {"id": "rag_03", "status": "correct"},
+    {"id": "rag_04", "status": "correct"},
+    {"id": "calc_01", "status": "correct"},
+    {"id": "calc_02", "status": "correct"},
+    {"id": "calc_03", "status": "correct"},
+    {"id": "calc_04", "status": "correct"},
+    {"id": "none_01", "status": "correct"},
+    {"id": "none_02", "status": "correct"},
+    {"id": "none_03", "status": "correct"},
+    {"id": "none_04", "status": "correct"}
+  ]
+}

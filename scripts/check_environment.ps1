@@ -350,7 +350,13 @@ from dotenv import load_dotenv
 import psycopg
 
 load_dotenv(os.environ["AGENT_ENV_FILE"], override=True)
-required = {"conversations", "messages", "agent_sessions", "agent_messages"}
+required = {
+    "conversations",
+    "messages",
+    "agent_sessions",
+    "agent_messages",
+    "oracle_recognition_records",
+}
 
 with psycopg.connect(
     host=os.getenv("POSTGRES_HOST"),

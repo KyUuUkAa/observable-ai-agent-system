@@ -59,6 +59,9 @@ interface OraclePrediction {
 interface OracleRecognitionResponse {
   filename: string
   image_id: string
+  record_id: string
+  review_status: OracleReviewStatus
+  review_threshold: number
   image: {
     width: number
     height: number
@@ -70,7 +73,51 @@ interface OracleRecognitionResponse {
     class_count: number
     image_size: number
     device: string
+    checkpoint_sha256?: string
   }
+}
+
+type OracleReviewStatus = 'pending' | 'auto_accepted' | 'accepted' | 'rejected'
+
+interface OracleRecord {
+  id: string
+  original_filename: string
+  image_width: number
+  image_height: number
+  top1_class_code: string
+  top1_confidence: number
+  top5: OraclePrediction[]
+  model_version: string
+  review_threshold: number
+  review_status: OracleReviewStatus
+  review_notes: string | null
+  reviewed_at: string | null
+  execution_trace: Record<string, unknown>
+  source: 'single' | 'batch'
+  created_at: string
+}
+
+interface OracleBatchResponse {
+  total: number
+  succeeded: number
+  failed: number
+  review_threshold: number
+  results: Array<{
+    status: 'success' | 'failed'
+    filename: string
+    record_id?: string
+    review_status?: OracleReviewStatus
+    prediction?: OraclePrediction
+    error?: string
+  }>
+}
+
+interface OracleReviewSummary {
+  total: number
+  pending: number
+  auto_accepted: number
+  accepted: number
+  rejected: number
 }
 
 // ========================================
@@ -111,6 +158,28 @@ const oracleAgentLoading = ref<boolean>(false)
 const oracleError = ref<string>('')
 
 const oracleResult = ref<OracleRecognitionResponse | null>(null)
+
+const oracleWorkspaceTab = ref<'recognize' | 'manage'>('recognize')
+
+const oracleBatchFiles = ref<File[]>([])
+
+const oracleBatchLoading = ref<boolean>(false)
+
+const oracleBatchResult = ref<OracleBatchResponse | null>(null)
+
+const oracleRecords = ref<OracleRecord[]>([])
+
+const oracleRecordsLoading = ref<boolean>(false)
+
+const oracleReviewFilter = ref<'' | OracleReviewStatus>('pending')
+
+const oracleReviewSummary = ref<OracleReviewSummary>({
+  total: 0,
+  pending: 0,
+  auto_accepted: 0,
+  accepted: 0,
+  rejected: 0,
+})
 
 // ========================================
 // 是否允许发送
@@ -526,6 +595,9 @@ async function recognizeOracle() {
 
   const formData = new FormData()
   formData.append('file', oracleFile.value)
+  if (conversationId.value) {
+    formData.append('conversation_id', conversationId.value)
+  }
 
   try {
     const response = await fetch(`${API_BASE_URL}/oracle/recognize`, {
@@ -542,11 +614,173 @@ async function recognizeOracle() {
     }
 
     oracleResult.value = data as OracleRecognitionResponse
+    await loadOracleReviewSummary()
   } catch (error) {
     oracleError.value = error instanceof Error ? error.message : String(error)
   } finally {
     oracleLoading.value = false
   }
+}
+
+function selectOracleBatchFiles(event: Event) {
+  const target = event.target as HTMLInputElement
+  const files = Array.from(target.files ?? [])
+
+  oracleError.value = ''
+  oracleBatchResult.value = null
+
+  if (files.length > 50) {
+    oracleBatchFiles.value = []
+    oracleError.value = '单次最多选择 50 张图片。'
+    target.value = ''
+    return
+  }
+
+  const invalid = files.find(
+    (file) => !file.type.startsWith('image/') || file.size > 10 * 1024 * 1024,
+  )
+  if (invalid) {
+    oracleBatchFiles.value = []
+    oracleError.value = `文件 ${invalid.name} 不是有效图片，或超过 10 MB。`
+    target.value = ''
+    return
+  }
+
+  oracleBatchFiles.value = files
+}
+
+async function recognizeOracleBatch() {
+  if (oracleBatchFiles.value.length === 0 || oracleBatchLoading.value) {
+    return
+  }
+
+  oracleBatchLoading.value = true
+  oracleError.value = ''
+  oracleBatchResult.value = null
+
+  const formData = new FormData()
+  oracleBatchFiles.value.forEach((file) => formData.append('files', file))
+  if (conversationId.value) {
+    formData.append('conversation_id', conversationId.value)
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/oracle/batch`, {
+      method: 'POST',
+      body: formData,
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(
+        typeof data.detail === 'string' ? data.detail : `批量识别失败：HTTP ${response.status}`,
+      )
+    }
+
+    oracleBatchResult.value = data as OracleBatchResponse
+    await loadOracleRecords()
+  } catch (error) {
+    oracleError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    oracleBatchLoading.value = false
+  }
+}
+
+async function loadOracleReviewSummary() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/oracle/review-summary`)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    oracleReviewSummary.value = (await response.json()) as OracleReviewSummary
+  } catch (error) {
+    console.error('加载复核汇总失败:', error)
+  }
+}
+
+async function loadOracleRecords() {
+  oracleRecordsLoading.value = true
+  oracleError.value = ''
+
+  const params = new URLSearchParams({ limit: '200' })
+  if (oracleReviewFilter.value) {
+    params.set('review_status', oracleReviewFilter.value)
+  }
+
+  try {
+    const [recordsResponse] = await Promise.all([
+      fetch(`${API_BASE_URL}/oracle/records?${params.toString()}`),
+      loadOracleReviewSummary(),
+    ])
+    const data = await recordsResponse.json()
+    if (!recordsResponse.ok) {
+      throw new Error(
+        typeof data.detail === 'string'
+          ? data.detail
+          : `加载识别记录失败：HTTP ${recordsResponse.status}`,
+      )
+    }
+    oracleRecords.value = data.items as OracleRecord[]
+  } catch (error) {
+    oracleError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    oracleRecordsLoading.value = false
+  }
+}
+
+async function openOracleWorkspaceTab(tab: 'recognize' | 'manage') {
+  oracleWorkspaceTab.value = tab
+  oracleError.value = ''
+  if (tab === 'manage') {
+    await loadOracleRecords()
+  }
+}
+
+async function reviewOracleRecord(record: OracleRecord, status: 'accepted' | 'rejected') {
+  const notes = window.prompt('复核备注（可留空；取消则不提交）', record.review_notes ?? '')
+  if (notes === null) {
+    return
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/oracle/records/${record.id}/review`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, notes: notes.trim() || null }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(
+        typeof data.detail === 'string' ? data.detail : `复核失败：HTTP ${response.status}`,
+      )
+    }
+    await loadOracleRecords()
+  } catch (error) {
+    oracleError.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+function exportOracleRecords(format: 'csv' | 'json') {
+  const params = new URLSearchParams({ format })
+  if (oracleReviewFilter.value) {
+    params.set('review_status', oracleReviewFilter.value)
+  }
+  window.open(`${API_BASE_URL}/oracle/records/export?${params.toString()}`, '_blank')
+}
+
+function formatOracleDate(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  }).format(new Date(value))
+}
+
+function oracleReviewLabel(status: OracleReviewStatus) {
+  return {
+    pending: '待复核',
+    auto_accepted: '高置信度自动通过',
+    accepted: '人工确认',
+    rejected: '已驳回',
+  }[status]
 }
 
 async function askOracleAgent() {
@@ -748,7 +982,9 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="conversation-status">
-              <span v-if="activeMode === 'oracle'"> Single Glyph Mode </span>
+              <span v-if="activeMode === 'oracle'">
+                {{ oracleWorkspaceTab === 'recognize' ? 'Single Glyph Mode' : 'Batch & Review' }}
+              </span>
 
               <span v-else-if="conversationCreating"> Creating Session... </span>
 
@@ -781,58 +1017,172 @@ onBeforeUnmount(() => {
         </main>
 
         <main v-else class="oracle-workspace">
-          <div class="oracle-intro">
-            <span class="oracle-kicker"> Oracle Bone Script </span>
-
-            <h2>上传一张已裁剪的单字图片</h2>
-
-            <p>当前模型支持 39 个类别。请上传只包含一个甲骨文字的 BMP、PNG、JPG 或 WEBP 图片。</p>
+          <div class="oracle-workspace-tabs">
+            <button
+              :class="{ active: oracleWorkspaceTab === 'recognize' }"
+              @click="openOracleWorkspaceTab('recognize')"
+            >
+              单字识别
+            </button>
+            <button
+              :class="{ active: oracleWorkspaceTab === 'manage' }"
+              @click="openOracleWorkspaceTab('manage')"
+            >
+              批量处理与复核
+            </button>
           </div>
 
-          <label
-            class="oracle-dropzone"
-            :class="{
-              'has-preview': oraclePreviewUrl,
-            }"
-          >
-            <input
-              type="file"
-              accept="image/*"
-              :disabled="oracleLoading"
-              @change="selectOracleFile"
-            />
+          <template v-if="oracleWorkspaceTab === 'recognize'">
+            <div class="oracle-intro">
+              <span class="oracle-kicker"> Oracle Bone Script </span>
 
-            <img v-if="oraclePreviewUrl" :src="oraclePreviewUrl" alt="待识别甲骨文字预览" />
+              <h2>上传一张已裁剪的单字图片</h2>
 
-            <div v-else class="oracle-dropzone-copy">
-              <strong>选择单字图片</strong>
-              <span>最大 10 MB</span>
+              <p>当前模型支持 39 个类别。请上传只包含一个甲骨文字的 BMP、PNG、JPG 或 WEBP 图片。</p>
             </div>
-          </label>
 
-          <div v-if="oracleFile" class="oracle-file-meta">
-            <span>{{ oracleFile.name }}</span>
-            <span> {{ (oracleFile.size / 1024).toFixed(1) }} KB </span>
-          </div>
+            <label
+              class="oracle-dropzone"
+              :class="{
+                'has-preview': oraclePreviewUrl,
+              }"
+            >
+              <input
+                type="file"
+                accept="image/*"
+                :disabled="oracleLoading"
+                @change="selectOracleFile"
+              />
+
+              <img v-if="oraclePreviewUrl" :src="oraclePreviewUrl" alt="待识别甲骨文字预览" />
+
+              <div v-else class="oracle-dropzone-copy">
+                <strong>选择单字图片</strong>
+                <span>最大 10 MB</span>
+              </div>
+            </label>
+
+            <div v-if="oracleFile" class="oracle-file-meta">
+              <span>{{ oracleFile.name }}</span>
+              <span> {{ (oracleFile.size / 1024).toFixed(1) }} KB </span>
+            </div>
+
+            <button class="oracle-submit" :disabled="!canRecognizeOracle" @click="recognizeOracle">
+              {{ oracleLoading ? '识别中...' : '开始识别并保存记录' }}
+            </button>
+
+            <button
+              v-if="oracleResult"
+              class="oracle-agent-submit"
+              :disabled="!canAskOracleAgent"
+              @click="askOracleAgent"
+            >
+              {{ oracleAgentLoading ? 'Agent 分析中...' : '交给 Agent 分析' }}
+            </button>
+
+            <p class="oracle-note">
+              模型输出为数据集类别编码；现代汉字和释义映射将在后续阶段补充。
+            </p>
+          </template>
+
+          <template v-else>
+            <div class="oracle-intro">
+              <span class="oracle-kicker"> Curation Workflow </span>
+              <h2>批量整理与人工复核</h2>
+              <p>批量上传裁剪后的单字图；低于置信度阈值的结果会自动进入待复核队列。</p>
+            </div>
+
+            <section class="oracle-batch-panel">
+              <label class="oracle-batch-picker">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  :disabled="oracleBatchLoading"
+                  @change="selectOracleBatchFiles"
+                />
+                <strong>选择多张单字图片</strong>
+                <span>最多 50 张，每张不超过 10 MB</span>
+              </label>
+              <div class="oracle-batch-actions">
+                <span>已选择 {{ oracleBatchFiles.length }} 张</span>
+                <button
+                  :disabled="oracleBatchFiles.length === 0 || oracleBatchLoading"
+                  @click="recognizeOracleBatch"
+                >
+                  {{ oracleBatchLoading ? '批量识别中...' : '开始批量识别' }}
+                </button>
+              </div>
+              <div v-if="oracleBatchResult" class="oracle-batch-result">
+                本次共 {{ oracleBatchResult.total }} 张，成功
+                {{ oracleBatchResult.succeeded }} 张，失败 {{ oracleBatchResult.failed }} 张。
+              </div>
+            </section>
+
+            <div class="oracle-summary-grid">
+              <div>
+                <span>全部</span><strong>{{ oracleReviewSummary.total }}</strong>
+              </div>
+              <div>
+                <span>待复核</span><strong>{{ oracleReviewSummary.pending }}</strong>
+              </div>
+              <div>
+                <span>人工确认</span><strong>{{ oracleReviewSummary.accepted }}</strong>
+              </div>
+              <div>
+                <span>已驳回</span><strong>{{ oracleReviewSummary.rejected }}</strong>
+              </div>
+            </div>
+
+            <div class="oracle-record-toolbar">
+              <select v-model="oracleReviewFilter" @change="loadOracleRecords">
+                <option value="">全部状态</option>
+                <option value="pending">待复核</option>
+                <option value="auto_accepted">高置信度自动通过</option>
+                <option value="accepted">人工确认</option>
+                <option value="rejected">已驳回</option>
+              </select>
+              <button @click="exportOracleRecords('csv')">导出 CSV</button>
+              <button @click="exportOracleRecords('json')">导出 JSON</button>
+            </div>
+
+            <div v-if="oracleRecordsLoading" class="oracle-record-empty">正在加载识别记录...</div>
+            <div v-else-if="oracleRecords.length === 0" class="oracle-record-empty">
+              当前筛选条件下没有识别记录。
+            </div>
+            <div v-else class="oracle-record-list">
+              <article v-for="record in oracleRecords" :key="record.id" class="oracle-record-card">
+                <img
+                  :src="`${API_BASE_URL}/oracle/records/${record.id}/image`"
+                  :alt="record.original_filename"
+                />
+                <div class="oracle-record-body">
+                  <div class="oracle-record-heading">
+                    <div>
+                      <strong>{{ record.top1_class_code }}</strong>
+                      <span>{{ (record.top1_confidence * 100).toFixed(2) }}%</span>
+                    </div>
+                    <span class="oracle-review-badge" :class="record.review_status">
+                      {{ oracleReviewLabel(record.review_status) }}
+                    </span>
+                  </div>
+                  <p>{{ record.original_filename }} · {{ formatOracleDate(record.created_at) }}</p>
+                  <p>Top‑5：{{ record.top5.map((item) => item.class_code).join(' / ') }}</p>
+                  <p v-if="record.review_notes">备注：{{ record.review_notes }}</p>
+                  <div class="oracle-review-actions">
+                    <button @click="reviewOracleRecord(record, 'accepted')">确认</button>
+                    <button class="reject" @click="reviewOracleRecord(record, 'rejected')">
+                      驳回
+                    </button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </template>
 
           <div v-if="oracleError" class="oracle-error">
             {{ oracleError }}
           </div>
-
-          <button class="oracle-submit" :disabled="!canRecognizeOracle" @click="recognizeOracle">
-            {{ oracleLoading ? '识别中...' : '开始识别' }}
-          </button>
-
-          <button
-            v-if="oracleResult"
-            class="oracle-agent-submit"
-            :disabled="!canAskOracleAgent"
-            @click="askOracleAgent"
-          >
-            {{ oracleAgentLoading ? 'Agent 分析中...' : '交给 Agent 分析' }}
-          </button>
-
-          <p class="oracle-note">模型输出为数据集类别编码；现代汉字和释义映射将在后续阶段补充。</p>
         </main>
 
         <!-- Input -->
@@ -875,6 +1225,12 @@ onBeforeUnmount(() => {
                 {{ oracleResult.prediction.class_code }}
               </strong>
               <small> {{ (oracleResult.prediction.confidence * 100).toFixed(2) }}% </small>
+            </div>
+
+            <div class="oracle-record-status">
+              <span>记录状态</span>
+              <strong>{{ oracleReviewLabel(oracleResult.review_status) }}</strong>
+              <code>{{ oracleResult.record_id.slice(0, 8) }}</code>
             </div>
 
             <div class="oracle-top5-title">Top‑5 Candidates</div>
@@ -1484,6 +1840,31 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
+.oracle-workspace-tabs {
+  margin-bottom: 26px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #f3f4f6;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.oracle-workspace-tabs button {
+  padding: 9px 14px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.oracle-workspace-tabs button.active {
+  background: white;
+  color: #78350f;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
 .oracle-intro {
   max-width: 600px;
 
@@ -1662,6 +2043,226 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
+.oracle-batch-panel {
+  margin-bottom: 22px;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafaf9;
+}
+
+.oracle-batch-picker {
+  min-height: 92px;
+  border: 1px dashed #d1d5db;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.oracle-batch-picker input {
+  display: none;
+}
+
+.oracle-batch-picker strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.oracle-batch-picker span,
+.oracle-batch-actions span {
+  font-size: 12px;
+}
+
+.oracle-batch-actions {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6b7280;
+}
+
+.oracle-batch-actions button,
+.oracle-record-toolbar button,
+.oracle-review-actions button {
+  padding: 8px 12px;
+  border: 1px solid #92400e;
+  border-radius: 8px;
+  background: #78350f;
+  color: white;
+  cursor: pointer;
+}
+
+.oracle-batch-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.oracle-batch-result {
+  margin-top: 12px;
+  color: #166534;
+  font-size: 13px;
+}
+
+.oracle-summary-grid {
+  margin-bottom: 18px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.oracle-summary-grid div {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.oracle-summary-grid span {
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.oracle-summary-grid strong {
+  color: #111827;
+  font-size: 20px;
+}
+
+.oracle-record-toolbar {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.oracle-record-toolbar select {
+  min-width: 190px;
+  margin-right: auto;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+}
+
+.oracle-record-toolbar button {
+  background: white;
+  color: #78350f;
+}
+
+.oracle-record-empty {
+  padding: 26px;
+  border: 1px dashed #d1d5db;
+  border-radius: 10px;
+  color: #6b7280;
+  text-align: center;
+  font-size: 13px;
+}
+
+.oracle-record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.oracle-record-card {
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  display: flex;
+  gap: 14px;
+  background: white;
+}
+
+.oracle-record-card > img {
+  width: 88px;
+  height: 88px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  object-fit: contain;
+}
+
+.oracle-record-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.oracle-record-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.oracle-record-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.oracle-record-heading strong {
+  font-family: Consolas, monospace;
+  font-size: 18px;
+}
+
+.oracle-record-heading span,
+.oracle-record-body p {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.oracle-record-body p {
+  margin: 7px 0 0;
+  word-break: break-word;
+}
+
+.oracle-review-badge {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  white-space: nowrap;
+}
+
+.oracle-review-badge.pending {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.oracle-review-badge.accepted,
+.oracle-review-badge.auto_accepted {
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.oracle-review-badge.rejected {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.oracle-review-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.oracle-review-actions button {
+  padding: 6px 12px;
+  background: #166534;
+  border-color: #166534;
+}
+
+.oracle-review-actions button.reject {
+  background: white;
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
 .oracle-result-empty {
   color: #888;
 
@@ -1684,6 +2285,25 @@ onBeforeUnmount(() => {
   flex-direction: column;
 
   gap: 4px;
+}
+
+.oracle-record-status {
+  margin: -12px 0 22px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.oracle-record-status strong {
+  color: #374151;
+  text-align: right;
+}
+
+.oracle-record-status code {
+  grid-column: 1 / -1;
+  color: #9ca3af;
 }
 
 .oracle-primary-result span,
@@ -1982,6 +2602,10 @@ onBeforeUnmount(() => {
 
   .trace-panel {
     width: 100%;
+  }
+
+  .oracle-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 </style>

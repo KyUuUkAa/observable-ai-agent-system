@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 import time
@@ -71,6 +72,17 @@ def get_image_size() -> int:
     if image_size <= 0:
         raise OracleModelUnavailableError("ORACLE_IMGSZ 必须大于 0。")
     return image_size
+
+
+@lru_cache(maxsize=1)
+def get_model_fingerprint() -> str:
+    """Return a stable checkpoint fingerprint without exposing its path."""
+
+    digest = hashlib.sha256()
+    with get_model_path().open("rb") as model_file:
+        for chunk in iter(lambda: model_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def pad_to_square(image: Image.Image) -> Image.Image:
@@ -250,5 +262,6 @@ def recognize_oracle_image(content: bytes) -> dict:
             "class_count": len(result.names),
             "image_size": get_image_size(),
             "device": get_device(),
+            "checkpoint_sha256": get_model_fingerprint(),
         },
     }

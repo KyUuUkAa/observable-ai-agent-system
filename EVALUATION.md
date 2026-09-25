@@ -30,7 +30,8 @@ Ollama / Qwen3:4B
   ↓
 Function Tools
   ├── search_resume
-  └── calculator
+  ├── calculator
+  └── recognize_oracle_image
   ↓
 PostgreSQL Session
 ```
@@ -58,6 +59,50 @@ Session Growth
 ```
 
 形成完整的 Agent 工程评估链路。
+
+---
+
+## Automated Regression Runner
+
+The repeatable regression entry point is:
+
+```powershell
+python -m evaluation.agent_regression --fail-on-regression --fail-on-case-failure
+```
+
+It implements one closed pipeline:
+
+```text
+read versioned JSON cases
+        ↓
+run the real Agent in isolated conversations
+        ↓
+parse tool arguments and outputs from Execution Trace
+        ↓
+classify correct / false / missed / wrong / duplicate calls
+        ↓
+aggregate latency, tool errors, and run failures
+        ↓
+compare case-level results and pass rate with the baseline
+        ↓
+write JSON + Markdown reports
+```
+
+Inputs and outputs:
+
+```text
+evaluation/cases/tool_routing.json       # editable test cases
+evaluation/baselines/tool_routing.json   # versioned accepted baseline
+reports/agent_regression/                # ignored generated reports
+```
+
+Each case declares `expected_tools`, including an empty list for a no-tool query. The report preserves the raw tool trace needed to diagnose wrong arguments, repeated calls, tool errors, and routing regressions. Temporary PostgreSQL Agent sessions are removed after each case; use `--keep-sessions` only when database-level debugging is needed. Use `--case-id` or `--tag` for focused diagnosis, and update the baseline only after reviewing a complete successful run with `--write-baseline`.
+
+The legacy command remains available and delegates to the same runner:
+
+```powershell
+python -m evaluation.tool_selection_eval
+```
 
 ---
 

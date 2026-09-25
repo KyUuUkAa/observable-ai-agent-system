@@ -107,7 +107,11 @@ Main endpoints:
 | GET | `/conversations/{conversation_id}/messages` | Load conversation history |
 | DELETE | `/conversations/{conversation_id}` | Delete conversation and clear Agent Session |
 | GET | `/oracle/health` | Check whether the local classifier is configured |
-| POST | `/oracle/recognize` | Upload one cropped glyph and return Top-5 class codes |
+| POST | `/oracle/recognize` | Recognize one glyph and persist its result |
+| POST | `/oracle/batch` | Recognize and persist up to 50 cropped glyphs |
+| GET | `/oracle/records` | List and filter recognition records |
+| PATCH | `/oracle/records/{record_id}/review` | Confirm or reject a recognition result |
+| GET | `/oracle/records/export` | Export filtered records as CSV or JSON |
 
 When the backend is running locally, the interactive API documentation is available at:
 
@@ -245,6 +249,26 @@ Agent calls recognize_oracle_image
         ↓
 Execution Trace records the tool call and output
 ```
+
+## 4. Oracle Digitization Workflow
+
+The Oracle module is designed as an assisted curation workflow rather than an automatic decipherment claim:
+
+```text
+Single or batch upload
+        ↓
+Top-1 / Top-5 classification
+        ↓
+PostgreSQL record + model fingerprint + trace
+        ↓
+Low-confidence result enters the review queue
+        ↓
+Human confirms, rejects, or adds notes
+        ↓
+Filtered CSV / JSON export
+```
+
+The default review threshold is `0.85` and can be changed with `ORACLE_REVIEW_THRESHOLD`. Original images, predictions, confidence, model version, timestamps, review decisions, and the later Agent execution trace are kept together for auditability.
 
 ---
 
@@ -808,6 +832,9 @@ observable-ai-agent-system/
 ├── oracle_recognition.py
 │   └── Lazy-loaded Oracle Bone Script single-glyph classifier
 │
+├── oracle_workflow.py
+│   └── Review threshold, trace construction and CSV/JSON export
+│
 ├── tools.py
 │   └── Agent Function Tools
 │
@@ -835,12 +862,18 @@ observable-ai-agent-system/
 │
 ├── evaluation/
 │   ├── __init__.py
+│   ├── agent_regression.py
+│   ├── regression_core.py
+│   ├── cases/tool_routing.json
+│   ├── baselines/tool_routing.json
 │   ├── latency_eval.py
 │   ├── retrieval_eval.py
 │   ├── session_growth_eval.py
 │   └── tool_selection_eval.py
 │
 ├── tests/
+│   ├── test_agent_regression.py
+│   ├── test_oracle_workflow.py
 │   ├── test_rag.py
 │   └── test_session.py
 │
@@ -891,14 +924,14 @@ An existing Python environment can also be used. The launchers use the active en
 
 ## 3. Prepare PostgreSQL
 
-Start PostgreSQL, then create the database and the four required tables:
+Start PostgreSQL, then create the database and the required tables:
 
 ```powershell
 psql -U postgres -c "CREATE DATABASE career_agent;"
 psql -U postgres -d career_agent -f .\scripts\init_database.sql
 ```
 
-If the database already exists, skip the first command. You can run the SQL file through pgAdmin instead when `psql` is not on `PATH`. The schema script is idempotent and creates the product conversation tables plus the Agent SDK session tables.
+If the database already exists, skip the first command but run `init_database.sql` again after pulling this version. You can run the SQL file through pgAdmin instead when `psql` is not on `PATH`. The script is idempotent and adds the recognition-record/review table without deleting existing data.
 
 ## 4. Configure `.env`
 
@@ -919,6 +952,7 @@ HF_TOKEN=
 ORACLE_MODEL_PATH=models/oracle/best_portable.pt
 ORACLE_DEVICE=cpu
 ORACLE_IMGSZ=224
+ORACLE_REVIEW_THRESHOLD=0.85
 ```
 
 If the password contains reserved URL characters, URL-encode it in `AGENT_DATABASE_URL`. Never commit the real `.env`; it is ignored by Git.
@@ -1081,12 +1115,15 @@ Content-Type: multipart/form-data
 
 Upload one PNG, JPEG, BMP, or other Pillow-supported image in the `file` field. The backend validates that the upload is an image, rejects files larger than 10 MB, pads the glyph to a square without stretching it, and lazily loads the local model on the first recognition request.
 
-The response includes the Top-1 class code, Top-5 predictions and confidence values. Example:
+The response includes the persisted record ID, review state, Top-1 class code, Top-5 predictions and confidence values. Example:
 
 ```json
 {
   "filename": "glyph.png",
   "image_id": "6c77965e2f174638b99b6ec0ea8f5771",
+  "record_id": "7eb52723-c043-4564-a1e2-d0a5d56e03da",
+  "review_status": "auto_accepted",
+  "review_threshold": 0.85,
   "image": { "width": 224, "height": 180 },
   "prediction": { "class_id": 12, "class_code": "038000", "confidence": 0.91 },
   "top5": [
@@ -1116,6 +1153,21 @@ Model availability can be checked without loading the weight:
 ```http
 GET /oracle/health
 ```
+
+## Batch Recognition, Review, and Export
+
+The frontend's **批量处理与复核** tab exposes the complete workflow. The equivalent APIs are:
+
+```http
+POST /oracle/batch
+GET /oracle/review-summary
+GET /oracle/records?review_status=pending
+PATCH /oracle/records/{record_id}/review
+GET /oracle/records/export?format=csv&review_status=pending
+GET /oracle/records/export?format=json
+```
+
+`POST /oracle/batch` accepts repeated multipart fields named `files`, with at most 50 images per request. A review update accepts `status` (`pending`, `accepted`, or `rejected`) and optional `notes`.
 
 ---
 
@@ -1162,6 +1214,25 @@ for the selected conversation.
 ---
 
 # Run Evaluation
+
+## Unified Agent Regression Evaluation
+
+Run the versioned JSON case suite, compare it with the committed baseline, and generate timestamped plus `latest` JSON/Markdown reports:
+
+```bash
+python -m evaluation.agent_regression --fail-on-regression --fail-on-case-failure
+```
+
+The pipeline reads `evaluation/cases/tool_routing.json`, runs every case through the real Agent, parses the execution trace, detects correct/wrong/missed/false/duplicate tool calls, aggregates latency and failure types, and compares the result with `evaluation/baselines/tool_routing.json`. Temporary database sessions are removed after each case unless `--keep-sessions` is supplied. Generated reports are written to the ignored `reports/agent_regression/` directory.
+
+Useful options:
+
+```bash
+python -m evaluation.agent_regression --case-id calc_01
+python -m evaluation.agent_regression --tag calculator
+python -m evaluation.agent_regression --keep-sessions --case-id rag_01
+python -m evaluation.agent_regression --write-baseline
+```
 
 ## Tool Selection Evaluation
 
@@ -1395,9 +1466,9 @@ Known limitations include:
 - no containerized deployment yet
 - no streaming response implementation
 - no large-scale vector database
-- Oracle recognition currently accepts one cropped glyph rather than locating multiple glyphs in a full rubbing
+- Oracle recognition accepts cropped glyphs rather than locating multiple glyphs in a full rubbing
 - Oracle classifier labels are dataset codes until a verified code-to-character dictionary is added
-- Agent image references are short-lived and process-local; re-upload after a backend restart or expiration
+- Agent image references are short-lived and process-local; persisted recognition records and original images remain available after a restart
 
 The evaluation metrics in this repository should therefore be interpreted as results for the current benchmark and environment rather than universal model performance claims.
 

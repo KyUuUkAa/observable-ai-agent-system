@@ -13,9 +13,12 @@ load_dotenv(override=True)
 # Imports
 # ============================================================
 
+import time
+from datetime import datetime, timezone
+from typing import Literal
 from uuid import UUID
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -32,13 +35,28 @@ from oracle_recognition import (
     has_cached_oracle_image,
     recognize_oracle_image,
 )
+from oracle_workflow import (
+    MAX_BATCH_FILES,
+    build_recognition_trace,
+    get_default_review_threshold,
+    oracle_records_to_csv,
+    oracle_records_to_json,
+    validate_review_threshold,
+)
 
 from database import (
+    attach_oracle_agent_trace,
+    create_oracle_recognition_record,
     create_conversation,
+    get_oracle_recognition_image,
+    get_oracle_recognition_record,
+    get_oracle_review_summary,
     get_conversations,
     add_message,
     get_messages,
+    list_oracle_recognition_records,
     update_conversation_title,
+    update_oracle_review,
     delete_conversation,
 )
 
@@ -55,7 +73,7 @@ app = FastAPI(
         "conversation persistence, execution tracing, "
         "and RAG-based retrieval."
     ),
-    version="1.0.0",
+    version="1.1.0",
     openapi_tags=[
         {
             "name": "System",
@@ -150,6 +168,18 @@ class ChatRequest(BaseModel):
         examples=[
             "6c77965e2f174638b99b6ec0ea8f5771"
         ],
+    )
+
+
+class OracleReviewRequest(BaseModel):
+    status: Literal["pending", "accepted", "rejected"] = Field(
+        ...,
+        description="Human review decision.",
+    )
+    notes: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Optional reviewer notes.",
     )
 
 
@@ -284,6 +314,65 @@ def health():
 # ============================================================
 
 MAX_ORACLE_UPLOAD_BYTES = 10 * 1024 * 1024
+DEFAULT_ORACLE_REVIEW_THRESHOLD = get_default_review_threshold()
+
+
+async def read_oracle_upload(file: UploadFile) -> bytes:
+    if (
+        file.content_type
+        and not file.content_type.startswith("image/")
+        and file.content_type != "application/octet-stream"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="只支持图片文件。",
+        )
+
+    content = await file.read(MAX_ORACLE_UPLOAD_BYTES + 1)
+    if len(content) > MAX_ORACLE_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="图片不能超过 10 MB。",
+        )
+    return content
+
+
+def recognize_and_store_oracle(
+    *,
+    content: bytes,
+    filename: str,
+    content_type: str | None,
+    review_threshold: float,
+    source: str,
+    conversation_id: str | None,
+):
+    started_at = time.perf_counter()
+    result = recognize_oracle_image(content)
+    image_id = cache_oracle_image(content)
+    trace = build_recognition_trace(
+        started_at=started_at,
+        source=source,
+        filename=filename,
+    )
+    record = create_oracle_recognition_record(
+        image_content=content,
+        original_filename=filename,
+        content_type=content_type,
+        image_reference_id=image_id,
+        recognition=result,
+        review_threshold=review_threshold,
+        source=source,
+        execution_trace=trace,
+        conversation_id=conversation_id,
+    )
+    return {
+        "filename": filename,
+        "image_id": image_id,
+        "record_id": record["id"],
+        "review_status": record["review_status"],
+        "review_threshold": record["review_threshold"],
+        **result,
+    }
 
 
 @app.get(
@@ -315,35 +404,29 @@ def oracle_health():
     ),
 )
 async def recognize_oracle(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    review_threshold: float = Form(DEFAULT_ORACLE_REVIEW_THRESHOLD),
+    conversation_id: str | None = Form(default=None),
 ):
-    if (
-        file.content_type
-        and not file.content_type.startswith("image/")
-        and file.content_type != "application/octet-stream"
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="只支持图片文件。",
-        )
-
+    filename = file.filename or "oracle-image"
+    content_type = file.content_type
     try:
-        content = await file.read(
-            MAX_ORACLE_UPLOAD_BYTES + 1
-        )
+        threshold = validate_review_threshold(review_threshold)
+        content = await read_oracle_upload(file)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     finally:
         await file.close()
 
-    if len(content) > MAX_ORACLE_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail="图片不能超过 10 MB。",
-        )
-
     try:
-        result = await run_in_threadpool(
-            recognize_oracle_image,
-            content,
+        return await run_in_threadpool(
+            recognize_and_store_oracle,
+            content=content,
+            filename=filename,
+            content_type=content_type,
+            review_threshold=threshold,
+            source="single",
+            conversation_id=conversation_id,
         )
     except OracleImageError as error:
         raise HTTPException(
@@ -361,11 +444,208 @@ async def recognize_oracle(
             detail=str(error),
         ) from error
 
+
+@app.post(
+    "/oracle/batch",
+    tags=["Oracle Recognition"],
+    summary="Recognize A Batch Of Oracle Glyphs",
+)
+async def recognize_oracle_batch(
+    files: list[UploadFile] = File(...),
+    review_threshold: float = Form(DEFAULT_ORACLE_REVIEW_THRESHOLD),
+    conversation_id: str | None = Form(default=None),
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="请至少上传一张图片。")
+    if len(files) > MAX_BATCH_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"单次最多上传 {MAX_BATCH_FILES} 张图片。",
+        )
+
+    try:
+        threshold = validate_review_threshold(review_threshold)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    results = []
+    succeeded = 0
+    failed = 0
+
+    for file in files:
+        filename = file.filename or "oracle-image"
+        try:
+            content = await read_oracle_upload(file)
+            result = await run_in_threadpool(
+                recognize_and_store_oracle,
+                content=content,
+                filename=filename,
+                content_type=file.content_type,
+                review_threshold=threshold,
+                source="batch",
+                conversation_id=conversation_id,
+            )
+            results.append({"status": "success", **result})
+            succeeded += 1
+        except (
+            HTTPException,
+            OracleImageError,
+            OracleModelUnavailableError,
+            OracleRecognitionError,
+        ) as error:
+            detail = error.detail if isinstance(error, HTTPException) else str(error)
+            results.append(
+                {
+                    "status": "failed",
+                    "filename": filename,
+                    "error": detail,
+                }
+            )
+            failed += 1
+        except Exception as error:
+            results.append(
+                {
+                    "status": "failed",
+                    "filename": filename,
+                    "error": str(error),
+                }
+            )
+            failed += 1
+        finally:
+            await file.close()
+
     return {
-        "filename": file.filename,
-        "image_id": cache_oracle_image(content),
-        **result,
+        "total": len(files),
+        "succeeded": succeeded,
+        "failed": failed,
+        "review_threshold": threshold,
+        "results": results,
     }
+
+
+@app.get(
+    "/oracle/review-summary",
+    tags=["Oracle Recognition"],
+    summary="Get Oracle Review Queue Summary",
+)
+def oracle_review_summary():
+    return get_oracle_review_summary()
+
+
+@app.get(
+    "/oracle/records/export",
+    tags=["Oracle Recognition"],
+    summary="Export Oracle Recognition Records",
+)
+def export_oracle_records(
+    format: Literal["json", "csv"] = Query(default="json"),
+    review_status: str | None = Query(default=None),
+    class_code: str | None = Query(default=None),
+):
+    try:
+        records = list_oracle_recognition_records(
+            review_status=review_status,
+            class_code=class_code,
+            limit=10_000,
+            offset=0,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    if format == "csv":
+        return Response(
+            content="\ufeff" + oracle_records_to_csv(records),
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="oracle-records-{timestamp}.csv"'
+                )
+            },
+        )
+
+    return Response(
+        content=oracle_records_to_json(records),
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="oracle-records-{timestamp}.json"'
+            )
+        },
+    )
+
+
+@app.get(
+    "/oracle/records",
+    tags=["Oracle Recognition"],
+    summary="List Oracle Recognition Records",
+)
+def oracle_records(
+    review_status: str | None = Query(default=None),
+    class_code: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    try:
+        records = list_oracle_recognition_records(
+            review_status=review_status,
+            class_code=class_code,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"items": records, "limit": limit, "offset": offset}
+
+
+@app.get(
+    "/oracle/records/{record_id}",
+    tags=["Oracle Recognition"],
+    summary="Get One Oracle Recognition Record",
+)
+def oracle_record(record_id: UUID):
+    record = get_oracle_recognition_record(str(record_id))
+    if record is None:
+        raise HTTPException(status_code=404, detail="识别记录不存在。")
+    return record
+
+
+@app.get(
+    "/oracle/records/{record_id}/image",
+    tags=["Oracle Recognition"],
+    summary="Get The Original Oracle Image",
+)
+def oracle_record_image(record_id: UUID):
+    image = get_oracle_recognition_image(str(record_id))
+    if image is None:
+        raise HTTPException(status_code=404, detail="识别记录不存在。")
+    return Response(
+        content=image["content"],
+        media_type=image["content_type"],
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+@app.patch(
+    "/oracle/records/{record_id}/review",
+    tags=["Oracle Recognition"],
+    summary="Review An Oracle Recognition Record",
+)
+def review_oracle_record(
+    record_id: UUID,
+    request: OracleReviewRequest,
+):
+    try:
+        record = update_oracle_review(
+            str(record_id),
+            review_status=request.status,
+            review_notes=request.notes,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if record is None:
+        raise HTTPException(status_code=404, detail="识别记录不存在。")
+    return record
 
 
 # ============================================================
@@ -484,6 +764,26 @@ async def chat(
             request.conversation_id
         ),
     )
+
+    if request.oracle_image_id:
+        agent_trace = {
+            "run_id": result.get("run_id"),
+            "status": result.get("status"),
+            "latency": result.get("latency"),
+            "agent_latency": result.get("agent_latency"),
+            "tool_call_count": result.get("tool_call_count", 0),
+            "tool_logs": result.get("tool_logs", []),
+            "error": result.get("error"),
+        }
+        try:
+            await run_in_threadpool(
+                attach_oracle_agent_trace,
+                request.oracle_image_id,
+                conversation_id=request.conversation_id,
+                agent_trace=agent_trace,
+            )
+        except Exception as error:
+            print("Oracle record trace update failed:", error)
 
     # ========================================================
     # 4. 保存 Agent 回复

@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "suite_name": "tool-routing",
+  "description": "Agent tool routing regression suite. Every case uses an isolated conversation.",
+  "cases": [
+    {
+      "id": "rag_01",
+      "query": "我的YOLO项目主要做了什么？",
+      "expected_tools": ["search_resume"],
+      "tags": ["rag", "routing"]
+    },
+    {
+      "id": "rag_02",
+      "query": "我的Agent项目用了哪些技术？",
+      "expected_tools": ["search_resume"],
+      "tags": ["rag", "routing"]
+    },
+    {
+      "id": "rag_03",
+      "query": "我的多视图聚类项目主要解决什么问题？",
+      "expected_tools": ["search_resume"],
+      "tags": ["rag", "routing"]
+    },
+    {
+      "id": "rag_04",
+      "query": "根据我的简历介绍一下我的项目经历。",
+      "expected_tools": ["search_resume"],
+      "tags": ["rag", "routing"]
+    },
+    {
+      "id": "calc_01",
+      "query": "计算 1234 * 5678",
+      "expected_tools": ["calculator"],
+      "tags": ["calculator", "routing"]
+    },
+    {
+      "id": "calc_02",
+      "query": "帮我算 9876 + 5432",
+      "expected_tools": ["calculator"],
+      "tags": ["calculator", "routing"]
+    },
+    {
+      "id": "calc_03",
+      "query": "10000 除以 25 等于多少？",
+      "expected_tools": ["calculator"],
+      "tags": ["calculator", "routing"]
+    },
+    {
+      "id": "calc_04",
+      "query": "计算 8888 - 4567",
+      "expected_tools": ["calculator"],
+      "tags": ["calculator", "routing"]
+    },
+    {
+      "id": "none_01",
+      "query": "Python 中 list 和 tuple 有什么区别？",
+      "expected_tools": [],
+      "tags": ["no-tool", "routing"]
+    },
+    {
+      "id": "none_02",
+      "query": "什么是 Transformer？",
+      "expected_tools": [],
+      "tags": ["no-tool", "routing"]
+    },
+    {
+      "id": "none_03",
+      "query": "解释一下什么是 REST API。",
+      "expected_tools": [],
+      "tags": ["no-tool", "routing"]
+    },
+    {
+      "id": "none_04",
+      "query": "Python 的字典和集合有什么区别？",
+      "expected_tools": [],
+      "tags": ["no-tool", "routing"]
+    }
+  ]
+}
