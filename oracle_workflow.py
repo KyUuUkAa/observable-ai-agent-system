@@ -38,12 +38,14 @@ def build_recognition_trace(
     started_at: float,
     source: str,
     filename: str,
+    routing: dict | None = None,
 ) -> dict:
     return {
         "recognition": {
             "status": "success",
             "source": source,
             "filename": filename,
+            "routing": routing or {"mode": "classification"},
             "latency_seconds": round(
                 time.perf_counter() - started_at,
                 4,
@@ -52,6 +54,7 @@ def build_recognition_trace(
                 "validate_upload",
                 "decode_image",
                 "run_classifier",
+                "route_hybrid_candidates",
                 "persist_record",
             ],
         }

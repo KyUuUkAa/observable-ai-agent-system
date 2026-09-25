@@ -11,3 +11,4 @@ sentence-transformers
 pillow
 python-multipart
 ultralytics==8.4.160
+torchvision

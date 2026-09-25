@@ -57,6 +57,8 @@ data/*
 # Generated evaluation output
 reports/
 evaluation/reports/
+runs/
+weights/
 
 # Node / Vue
 node_modules/

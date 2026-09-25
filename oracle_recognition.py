@@ -13,9 +13,17 @@ from threading import Lock
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
+from oracle_hybrid import (
+    OracleRetrievalUnavailableError,
+    extract_yolo_embedding,
+    get_hybrid_threshold,
+    get_retrieval_status,
+    select_visual_candidates,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "oracle" / "best_portable.pt"
+DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "oracle" / "best_ge50.pt"
 MAX_IMAGE_PIXELS = 25_000_000
 IMAGE_REFERENCE_TTL_SECONDS = 15 * 60
 IMAGE_REFERENCE_MAX_ITEMS = 8
@@ -50,7 +58,7 @@ def get_model_path() -> Path:
     path = path.resolve()
     if not path.is_file():
         raise OracleModelUnavailableError(
-            "甲骨文分类模型未配置。请将 best_portable.pt 放到 "
+            "甲骨文分类模型未配置。请将 best_ge50.pt 放到 "
             "models/oracle/，或设置 ORACLE_MODEL_PATH。"
         )
     return path
@@ -209,6 +217,7 @@ def get_model_status() -> dict:
             "task": "single_glyph_classification",
             "device": get_device(),
             "image_size": get_image_size(),
+            "retrieval": get_retrieval_status(),
         }
     except OracleModelUnavailableError as exc:
         return {
@@ -250,6 +259,23 @@ def recognize_oracle_image(content: bytes) -> dict:
         for index, confidence in zip(indices, confidences)
     ]
 
+    try:
+        with _prediction_lock:
+            embedding = extract_yolo_embedding(get_model(), source)
+        routing, visual_candidates = select_visual_candidates(
+            embedding,
+            top5,
+            confidence=top5[0]["confidence"],
+        )
+    except OracleRetrievalUnavailableError as exc:
+        routing = {
+            "mode": "classification_fallback",
+            "threshold": get_hybrid_threshold(),
+            "classification_confidence": top5[0]["confidence"],
+            "reason": str(exc),
+        }
+        visual_candidates = []
+
     return {
         "image": {
             "width": image.width,
@@ -257,11 +283,15 @@ def recognize_oracle_image(content: bytes) -> dict:
         },
         "prediction": top5[0],
         "top5": top5,
+        "routing": routing,
+        "visual_candidates": visual_candidates,
         "model": {
             "task": "single_glyph_classification",
             "class_count": len(result.names),
             "image_size": get_image_size(),
             "device": get_device(),
             "checkpoint_sha256": get_model_fingerprint(),
+            "hybrid_routing": routing,
+            "visual_candidates": visual_candidates,
         },
     }

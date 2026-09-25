@@ -109,6 +109,8 @@ Main endpoints:
 | GET | `/oracle/health` | Check whether the local classifier is configured |
 | POST | `/oracle/recognize` | Recognize one glyph and persist its result |
 | POST | `/oracle/batch` | Recognize and persist up to 50 cropped glyphs |
+| GET | `/oracle/candidates/{candidate_id}/glyph` | Return a retrieved reference glyph |
+| GET | `/oracle/candidates/{candidate_id}/rubbing` | Return a representative paired rubbing |
 | GET | `/oracle/records` | List and filter recognition records |
 | PATCH | `/oracle/records/{record_id}/review` | Confirm or reject a recognition result |
 | GET | `/oracle/records/export` | Export filtered records as CSV or JSON |
@@ -949,10 +951,13 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your_postgres_password
 AGENT_DATABASE_URL=postgresql+asyncpg://postgres:your_postgres_password@127.0.0.1:5432/career_agent
 HF_TOKEN=
-ORACLE_MODEL_PATH=models/oracle/best_portable.pt
+ORACLE_MODEL_PATH=models/oracle/best_ge50.pt
 ORACLE_DEVICE=cpu
 ORACLE_IMGSZ=224
 ORACLE_REVIEW_THRESHOLD=0.85
+ORACLE_HYBRID_THRESHOLD=0.85
+ORACLE_RETRIEVAL_INDEX=data/oracle_retrieval/index.npz
+ORACLE_DATASET_ROOT=
 ```
 
 If the password contains reserved URL characters, URL-encode it in `AGENT_DATABASE_URL`. Never commit the real `.env`; it is ignored by Git.
@@ -983,13 +988,137 @@ The backend expects Ollama at `http://127.0.0.1:11434` and the exact model famil
 The classifier weight is a local runtime asset and is intentionally excluded from Git. Copy the portable weight into the expected directory:
 
 ```powershell
-Copy-Item "<path-to-oracle-delivery>\runs\preserve_shape\weights\best_portable.pt" `
-  ".\models\oracle\best_portable.pt"
+Copy-Item "<path-to-trained-model>\best.pt" `
+  ".\models\oracle\best_ge50.pt"
 ```
 
 The default configuration uses CPU inference. To keep the weight elsewhere, set `ORACLE_MODEL_PATH` in `.env` to an absolute path or a path relative to the project root. Do not commit model weights unless you have explicitly chosen an appropriate model-distribution strategy.
 
 The current model classifies one already-cropped glyph. Its output labels are dataset codes such as `001000`; a code-to-modern-character mapping is not included in the source delivery, so the UI displays class codes and confidence values.
+
+### Rebuild the Oracle dataset and classifier
+
+The raw dataset must contain sibling `拓片数据/` and `字模数据/` directories. The
+pipeline treats the raw source as read-only, normalizes rubbing/glyph pair identities,
+groups every copy of the same pair into one split to prevent leakage, and pads images
+to square without stretching the glyph shape.
+
+```powershell
+python .\scripts\build_oracle_dataset.py `
+  --dataset-root "D:\datasets\oracle\字模与拓片匹配数据集" `
+  --validate-images
+
+python .\scripts\prepare_oracle_classification.py `
+  --manifest .\reports\oracle_dataset\manifest.csv `
+  --dataset-root "D:\datasets\oracle\字模与拓片匹配数据集" `
+  --output-dir .\data\oracle_classification_ge50 `
+  --minimum-images 50
+
+python .\scripts\train_oracle_classifier.py `
+  --data .\data\oracle_classification_ge50 `
+  --epochs 20 --batch 64 --device 0 --no-amp
+
+python .\scripts\evaluate_oracle_classifier.py `
+  --model .\runs\oracle_classification\tier-ge50\weights\best.pt `
+  --data .\data\oracle_classification_ge50 `
+  --split test
+```
+
+The audited source contains 28,537 rubbing images and 25,510 paired glyph images
+across 4,038 class codes. Because 2,179 classes have only one rubbing, the first
+reproducible classification tier uses the 109 classes with at least 50 images (11,182
+rubbings). On the pair-isolated test split it reaches **79.01% Top-1**, **95.36%
+Top-5**, and **76.01% macro F1** over 1,034 images. The previous 39-class checkpoint
+is used for transfer learning rather than discarded. Long-tail classes should be
+handled by glyph-to-rubbing retrieval or additional annotation, not by claiming a
+reliable 4,038-way classifier from singleton samples.
+
+For the long tail, the same YOLO backbone can be evaluated as a glyph-to-rubbing
+retrieval baseline without pretending that singleton classes are trainable labels:
+
+```powershell
+python .\scripts\train_oracle_retrieval.py `
+  --manifest .\reports\oracle_dataset\manifest.csv `
+  --dataset-root "D:\datasets\oracle\字模与拓片匹配数据集" `
+  --backbone yolo --evaluate-only --device cuda
+```
+
+With the 109-class checkpoint, the leakage-safe validation split contains 2,286
+rubbing queries, 2,022 glyph candidates, and 937 class codes. The no-fine-tuning
+baseline reaches **20.69% class Recall@1**, **41.29% class Recall@5**, and **7.44%
+exact-pair Recall@1**. It is therefore an experimental candidate-retrieval aid, not
+an automatically verified character mapping. A trial that fine-tuned the full
+backbone reduced validation recall and was rejected rather than deployed.
+
+### Build and use the hybrid visual-candidate index
+
+Build a reusable 256-dimensional index for every unique paired glyph. The command
+reads the source dataset but writes only to the ignored local `data/` directory:
+
+```powershell
+python .\scripts\build_oracle_retrieval_index.py `
+  --manifest .\reports\oracle_dataset\manifest.csv `
+  --dataset-root "D:\datasets\oracle\字模与拓片匹配数据集" `
+  --model .\models\oracle\best_ge50.pt `
+  --device cuda
+```
+
+The resulting index contains 25,510 glyph candidates across all 4,038 class codes.
+Each item keeps a normalized YOLO feature, pair ID, relative glyph path, and one
+representative rubbing path. Configure another location when needed:
+
+```env
+ORACLE_RETRIEVAL_INDEX=data/oracle_retrieval/index.npz
+ORACLE_DATASET_ROOT=D:\datasets\oracle\字模与拓片匹配数据集
+ORACLE_HYBRID_THRESHOLD=0.85
+```
+
+The index stores its local build root as a convenience, while
+`ORACLE_DATASET_ROOT` provides a portable override. Candidate paths are resolved
+under that root and cannot escape it. If the index is missing, recognition remains
+available in `classification_fallback` mode.
+
+Runtime routing is deliberately conservative:
+
+```text
+YOLO confidence >= threshold -> keep YOLO Top-5 and attach matching visual evidence
+YOLO confidence <  threshold -> keep YOLO Top-1 and retrieve five visual candidates
+```
+
+Retrieval does **not** silently replace the classifier prediction. On the 1,034-image
+test split, replacement at threshold 0.85 reduced overall accuracy to 64.70%, so that
+behavior was rejected. The useful calibrated operating points are:
+
+| Threshold | Auto-pass coverage | Accuracy among auto-passed | Error among auto-passed |
+|---:|---:|---:|---:|
+| 0.80 | 65.67% | 93.81% | 6.19% |
+| 0.85 | 60.93% | 95.08% | 4.92% |
+| 0.90 | 53.77% | 96.40% | 3.60% |
+
+Regenerate calibration, machine-readable error cases, and the fair shared-label
+model comparison with:
+
+```powershell
+python .\scripts\calibrate_oracle_hybrid.py `
+  --model .\models\oracle\best_ge50.pt `
+  --data .\data\oracle_classification_ge50 `
+  --index .\data\oracle_retrieval\index.npz `
+  --device cuda
+
+python .\scripts\compare_oracle_models.py `
+  --model "legacy39=.\models\oracle\best_portable.pt" `
+  --model "expanded109=.\models\oracle\best_ge50.pt" `
+  --data .\data\oracle_classification_ge50 `
+  --device cuda
+```
+
+The error-case JSONL labels classification errors, low-confidence samples,
+classification/retrieval conflicts, and hypothetical replacement errors. On the 604
+test images shared by both checkpoints, the specialized 39-class model reaches
+94.87% Top-1 while the expanded 109-class model reaches 82.28%. This comparison is
+reported separately from the expanded model's 109-class result: the smaller model is
+stronger in its narrow label set, while the expanded model covers 70 additional
+classes.
 
 ## 8. Install Frontend Dependencies
 

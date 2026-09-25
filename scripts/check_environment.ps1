@@ -282,7 +282,7 @@ function Test-BackendEnvironment {
         Add-Failure "data/resume.txt is missing. Copy data/resume.example.txt and replace it with local private content."
     }
 
-    $oracleModelSetting = "models/oracle/best_portable.pt"
+    $oracleModelSetting = "models/oracle/best_ge50.pt"
     if ($settings -and $settings.ContainsKey("ORACLE_MODEL_PATH") -and
         -not [string]::IsNullOrWhiteSpace($settings["ORACLE_MODEL_PATH"])) {
         $oracleModelSetting = $settings["ORACLE_MODEL_PATH"]
@@ -297,7 +297,25 @@ function Test-BackendEnvironment {
         Write-Result -Level "OK" -Message "Oracle classifier weight found."
     }
     else {
-        Add-Failure "Oracle classifier weight is missing. Copy best_portable.pt to models/oracle or set ORACLE_MODEL_PATH in .env."
+        Add-Failure "Oracle classifier weight is missing. Copy best_ge50.pt to models/oracle or set ORACLE_MODEL_PATH in .env."
+    }
+
+    $oracleIndexSetting = "data/oracle_retrieval/index.npz"
+    if ($settings -and $settings.ContainsKey("ORACLE_RETRIEVAL_INDEX") -and
+        -not [string]::IsNullOrWhiteSpace($settings["ORACLE_RETRIEVAL_INDEX"])) {
+        $oracleIndexSetting = $settings["ORACLE_RETRIEVAL_INDEX"]
+    }
+    $oracleIndexPath = if ([System.IO.Path]::IsPathRooted($oracleIndexSetting)) {
+        $oracleIndexSetting
+    }
+    else {
+        Join-Path $ProjectRoot $oracleIndexSetting
+    }
+    if (Test-Path -LiteralPath $oracleIndexPath -PathType Leaf) {
+        Write-Result -Level "OK" -Message "Oracle retrieval index found."
+    }
+    else {
+        Write-Result -Level "WARN" -Message "Oracle retrieval index is missing. Recognition will fall back to classification-only mode."
     }
 
     if ($PythonRunner) {

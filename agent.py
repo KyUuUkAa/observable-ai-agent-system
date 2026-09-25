@@ -62,6 +62,9 @@ agent = Agent(
 
 4. 对同一张图片，recognize_oracle_image 只能调用一次。
    工具返回的是数据集类别编码和置信度。
+   routing.mode 为 retrieval 时，visual_candidates 只是低置信度图形候选，
+   不得把检索候选说成已经确认的最终类别。
+   routing.mode 为 classification 时，可以同时说明 YOLO 结果及对应字模证据。
    在没有映射字典时，不得把类别编码编造成现代汉字或释义。
 
 5. 对同一个数学计算任务，calculator 只能调用一次。

@@ -56,6 +56,26 @@ interface OraclePrediction {
   confidence: number
 }
 
+interface OracleRouting {
+  mode: 'classification' | 'retrieval' | 'classification_fallback'
+  threshold: number
+  classification_confidence: number
+  reason: string
+  candidate_count?: number
+  class_count?: number
+}
+
+interface OracleVisualCandidate {
+  candidate_id: string
+  class_code: string
+  pair_id: string
+  similarity: number
+  glyph_url: string
+  rubbing_url: string
+  source: 'classification_support' | 'long_tail_retrieval'
+  classification_confidence?: number
+}
+
 interface OracleRecognitionResponse {
   filename: string
   image_id: string
@@ -68,6 +88,8 @@ interface OracleRecognitionResponse {
   }
   prediction: OraclePrediction
   top5: OraclePrediction[]
+  routing: OracleRouting
+  visual_candidates: OracleVisualCandidate[]
   model: {
     task: string
     class_count: number
@@ -1038,7 +1060,10 @@ onBeforeUnmount(() => {
 
               <h2>上传一张已裁剪的单字图片</h2>
 
-              <p>当前模型支持 39 个类别。请上传只包含一个甲骨文字的 BMP、PNG、JPG 或 WEBP 图片。</p>
+              <p>
+                YOLO 覆盖 109 个高频类别，并连接 4,038 类字模候选库。请上传只包含一个甲骨文字的
+                BMP、PNG、JPG 或 WEBP 图片。
+              </p>
             </div>
 
             <label
@@ -1232,6 +1257,59 @@ onBeforeUnmount(() => {
               <strong>{{ oracleReviewLabel(oracleResult.review_status) }}</strong>
               <code>{{ oracleResult.record_id.slice(0, 8) }}</code>
             </div>
+
+            <div class="oracle-routing-card" :class="oracleResult.routing.mode">
+              <span>识别策略</span>
+              <strong>
+                {{
+                  oracleResult.routing.mode === 'retrieval'
+                    ? '低置信度 · 全量字模检索'
+                    : oracleResult.routing.mode === 'classification'
+                      ? '高置信度 · YOLO 分类'
+                      : 'YOLO 分类回退'
+                }}
+              </strong>
+              <small>
+                阈值 {{ (oracleResult.routing.threshold * 100).toFixed(0) }}%
+                <template v-if="oracleResult.routing.class_count">
+                  · {{ oracleResult.routing.class_count }} 类候选库
+                </template>
+              </small>
+            </div>
+
+            <template v-if="oracleResult.visual_candidates.length > 0">
+              <div class="oracle-top5-title">Visual Candidate Evidence</div>
+
+              <div class="oracle-visual-candidates">
+                <article
+                  v-for="candidate in oracleResult.visual_candidates"
+                  :key="candidate.candidate_id"
+                  class="oracle-visual-candidate"
+                >
+                  <div class="oracle-candidate-images">
+                    <figure>
+                      <img
+                        :src="`${API_BASE_URL}${candidate.glyph_url}`"
+                        :alt="`${candidate.class_code} 字模`"
+                      />
+                      <figcaption>字模</figcaption>
+                    </figure>
+                    <figure>
+                      <img
+                        :src="`${API_BASE_URL}${candidate.rubbing_url}`"
+                        :alt="`${candidate.class_code} 代表拓片`"
+                      />
+                      <figcaption>拓片</figcaption>
+                    </figure>
+                  </div>
+                  <div class="oracle-visual-meta">
+                    <code>{{ candidate.class_code }}</code>
+                    <span>相似度 {{ (candidate.similarity * 100).toFixed(2) }}%</span>
+                  </div>
+                  <small>{{ candidate.pair_id }}</small>
+                </article>
+              </div>
+            </template>
 
             <div class="oracle-top5-title">Top‑5 Candidates</div>
 
@@ -2306,6 +2384,39 @@ onBeforeUnmount(() => {
   color: #9ca3af;
 }
 
+.oracle-routing-card {
+  margin-bottom: 20px;
+  padding: 12px;
+
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  background: #fffbeb;
+}
+
+.oracle-routing-card.retrieval {
+  border-color: #bfdbfe;
+
+  background: #eff6ff;
+}
+
+.oracle-routing-card span,
+.oracle-routing-card small {
+  color: #6b7280;
+
+  font-size: 10px;
+}
+
+.oracle-routing-card strong {
+  color: #1f2937;
+
+  font-size: 12px;
+}
+
 .oracle-primary-result span,
 .oracle-primary-result small {
   color: #92400e;
@@ -2335,6 +2446,78 @@ onBeforeUnmount(() => {
 
 .oracle-candidate {
   margin-bottom: 14px;
+}
+
+.oracle-visual-candidates {
+  margin-bottom: 22px;
+
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.oracle-visual-candidate {
+  padding: 8px;
+
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+
+  background: #fff;
+}
+
+.oracle-candidate-images {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.oracle-candidate-images figure {
+  margin: 0;
+}
+
+.oracle-candidate-images img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+
+  border-radius: 6px;
+
+  background: #f9fafb;
+}
+
+.oracle-candidate-images figcaption {
+  margin-top: 2px;
+
+  color: #9ca3af;
+
+  font-size: 9px;
+  text-align: center;
+}
+
+.oracle-visual-meta {
+  margin-top: 7px;
+
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+
+  font-size: 10px;
+}
+
+.oracle-visual-meta span,
+.oracle-visual-candidate > small {
+  color: #6b7280;
+}
+
+.oracle-visual-candidate > small {
+  display: block;
+  margin-top: 3px;
+
+  overflow: hidden;
+
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .oracle-candidate-row {

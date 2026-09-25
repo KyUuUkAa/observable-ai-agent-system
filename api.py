@@ -35,6 +35,11 @@ from oracle_recognition import (
     has_cached_oracle_image,
     recognize_oracle_image,
 )
+from oracle_hybrid import (
+    OracleCandidateNotFoundError,
+    OracleRetrievalUnavailableError,
+    get_candidate_image,
+)
 from oracle_workflow import (
     MAX_BATCH_FILES,
     build_recognition_trace,
@@ -353,6 +358,7 @@ def recognize_and_store_oracle(
         started_at=started_at,
         source=source,
         filename=filename,
+        routing=result.get("routing"),
     )
     record = create_oracle_recognition_record(
         image_content=content,
@@ -521,6 +527,25 @@ async def recognize_oracle_batch(
         "review_threshold": threshold,
         "results": results,
     }
+
+
+@app.get(
+    "/oracle/candidates/{candidate_id}/{kind}",
+    tags=["Oracle Recognition"],
+    summary="Get A Retrieved Oracle Candidate Image",
+)
+def oracle_candidate_image(candidate_id: str, kind: Literal["glyph", "rubbing"]):
+    try:
+        content, media_type = get_candidate_image(candidate_id, kind)
+    except OracleCandidateNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except OracleRetrievalUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @app.get(
