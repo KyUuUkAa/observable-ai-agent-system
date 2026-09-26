@@ -167,6 +167,45 @@ interface OracleQualityMetrics {
       total_tool_calls: number
     }
   } | null
+  business_simulation: {
+    sample: {
+      images: number
+      classes: number
+    }
+    classification: {
+      top1_accuracy: number
+      top5_accuracy: number
+      macro_f1: number
+    }
+    retrieval: {
+      class_recall_at_1: number
+      class_recall_at_5: number
+    }
+    fusion: {
+      assisted_candidate_recall_at_5: number
+      experimental_replacement_accuracy: number
+    }
+    workflow: {
+      threshold: number
+      auto_pass_coverage: number
+      auto_pass_accuracy: number
+      review_rate: number
+      review_conflict_rate: number
+    }
+    performance: {
+      mean_ms_per_image: number
+      p95_ms_per_image: number
+      compute_seconds_per_100: number
+      estimated_manual_minutes_per_100: number
+      assumed_review_seconds: number
+    }
+    leakage_audit: {
+      passed: boolean
+      selected_pair_overlap: number
+      selected_source_group_overlap: number
+      selected_content_hash_overlap: number
+    }
+  } | null
 }
 
 // ========================================
@@ -208,7 +247,7 @@ const oracleError = ref<string>('')
 
 const oracleResult = ref<OracleRecognitionResponse | null>(null)
 
-const oracleWorkspaceTab = ref<'recognize' | 'manage'>('recognize')
+const oracleWorkspaceTab = ref<'recognize' | 'manage' | 'evidence'>('recognize')
 
 const oracleBatchFiles = ref<File[]>([])
 
@@ -791,11 +830,13 @@ async function loadOracleRecords() {
   }
 }
 
-async function openOracleWorkspaceTab(tab: 'recognize' | 'manage') {
+async function openOracleWorkspaceTab(tab: 'recognize' | 'manage' | 'evidence') {
   oracleWorkspaceTab.value = tab
   oracleError.value = ''
   if (tab === 'manage') {
     await loadOracleRecords()
+  } else if (tab === 'evidence') {
+    await loadOracleQualityMetrics()
   }
 }
 
@@ -1061,7 +1102,13 @@ onBeforeUnmount(() => {
 
             <div class="conversation-status">
               <span v-if="activeMode === 'oracle'">
-                {{ oracleWorkspaceTab === 'recognize' ? 'Single Glyph Mode' : 'Batch & Review' }}
+                {{
+                  oracleWorkspaceTab === 'recognize'
+                    ? 'Single Glyph Mode'
+                    : oracleWorkspaceTab === 'manage'
+                      ? 'Batch & Review'
+                      : 'Evaluation Evidence'
+                }}
               </span>
 
               <span v-else-if="conversationCreating"> Creating Session... </span>
@@ -1107,6 +1154,12 @@ onBeforeUnmount(() => {
               @click="openOracleWorkspaceTab('manage')"
             >
               批量处理与复核
+            </button>
+            <button
+              :class="{ active: oracleWorkspaceTab === 'evidence' }"
+              @click="openOracleWorkspaceTab('evidence')"
+            >
+              实验结果
             </button>
           </div>
 
@@ -1166,7 +1219,7 @@ onBeforeUnmount(() => {
             </p>
           </template>
 
-          <template v-else>
+          <template v-else-if="oracleWorkspaceTab === 'manage'">
             <div class="oracle-intro">
               <span class="oracle-kicker"> Curation Workflow </span>
               <h2>批量整理与人工复核</h2>
@@ -1227,6 +1280,125 @@ onBeforeUnmount(() => {
               </div>
               <p v-if="!oracleQualityMetrics?.classification" class="oracle-metrics-empty">
                 尚未生成评估报告；运行评估脚本后此处会自动显示真实数据。
+              </p>
+            </section>
+
+            <section
+              v-if="oracleQualityMetrics?.business_simulation"
+              class="oracle-metrics-panel oracle-business-evidence"
+            >
+              <div class="oracle-section-heading">
+                <div>
+                  <span class="oracle-kicker"> Held-out Business Simulation </span>
+                  <h3>300 张真实拓片端到端证据</h3>
+                </div>
+                <small>
+                  {{ oracleQualityMetrics.business_simulation.sample.images }} 张 ·
+                  {{ oracleQualityMetrics.business_simulation.sample.classes }} 类 ·
+                  泄漏审计
+                  {{ oracleQualityMetrics.business_simulation.leakage_audit.passed ? '通过' : '未通过' }}
+                </small>
+              </div>
+              <div class="oracle-metrics-grid oracle-business-grid">
+                <div>
+                  <span>独立样本 Top‑1 / Top‑5</span>
+                  <strong>
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.classification.top1_accuracy,
+                      )
+                    }}
+                  </strong>
+                  <small>
+                    Top‑5
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.classification.top5_accuracy,
+                      )
+                    }}
+                  </small>
+                </div>
+                <div>
+                  <span>检索 Recall@5</span>
+                  <strong>
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.retrieval.class_recall_at_5,
+                      )
+                    }}
+                  </strong>
+                  <small>
+                    分类＋检索候选覆盖
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.fusion.assisted_candidate_recall_at_5,
+                      )
+                    }}
+                  </small>
+                </div>
+                <div>
+                  <span>自动通过覆盖率</span>
+                  <strong>
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.workflow.auto_pass_coverage,
+                      )
+                    }}
+                  </strong>
+                  <small>
+                    自动通过准确率
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.workflow.auto_pass_accuracy,
+                      )
+                    }}
+                  </small>
+                </div>
+                <div>
+                  <span>端到端 P95</span>
+                  <strong>
+                    {{ oracleQualityMetrics.business_simulation.performance.p95_ms_per_image.toFixed(2) }}
+                    ms
+                  </strong>
+                  <small>
+                    纯系统处理100张
+                    {{
+                      oracleQualityMetrics.business_simulation.performance.compute_seconds_per_100.toFixed(
+                        2,
+                      )
+                    }}
+                    秒
+                  </small>
+                </div>
+                <div>
+                  <span>待复核率</span>
+                  <strong>
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.workflow.review_rate,
+                      )
+                    }}
+                  </strong>
+                  <small>
+                    每条按
+                    {{ oracleQualityMetrics.business_simulation.performance.assumed_review_seconds }}秒规划
+                  </small>
+                </div>
+                <div>
+                  <span>预计人工复核 / 100张</span>
+                  <strong>
+                    {{
+                      oracleQualityMetrics.business_simulation.performance.estimated_manual_minutes_per_100.toFixed(
+                        1,
+                      )
+                    }}
+                    分钟
+                  </strong>
+                  <small>规划假设，不是实测人员效率</small>
+                </div>
+              </div>
+              <p class="oracle-evidence-note">
+                检索仅提供候选证据，不会静默覆盖分类结果；指标只对应六位类别码，不代表现代汉字释义准确率。
               </p>
             </section>
 
@@ -1316,6 +1488,143 @@ onBeforeUnmount(() => {
                 </div>
               </article>
             </div>
+          </template>
+
+          <template v-else>
+            <div class="oracle-intro">
+              <span class="oracle-kicker"> Reproducible Evidence </span>
+              <h2>独立测试集实验结果</h2>
+              <p>
+                固定分层抽取 300 张真实拓片，覆盖 109 类；样本与训练/验证集的来源组和内容哈希重叠均为 0。
+              </p>
+            </div>
+
+            <section
+              v-if="oracleQualityMetrics?.business_simulation"
+              class="oracle-metrics-panel oracle-business-evidence"
+            >
+              <div class="oracle-section-heading">
+                <div>
+                  <span class="oracle-kicker"> Held-out Business Simulation </span>
+                  <h3>分类、检索、分流与性能</h3>
+                </div>
+                <small>
+                  泄漏审计
+                  {{ oracleQualityMetrics.business_simulation.leakage_audit.passed ? '通过' : '未通过' }}
+                </small>
+              </div>
+              <div class="oracle-metrics-grid oracle-business-grid">
+                <div>
+                  <span>分类 Top‑1</span>
+                  <strong>
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.classification.top1_accuracy,
+                      )
+                    }}
+                  </strong>
+                  <small>
+                    Top‑5
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.classification.top5_accuracy,
+                      )
+                    }}
+                  </small>
+                </div>
+                <div>
+                  <span>检索 Recall@1 / @5</span>
+                  <strong>
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.retrieval.class_recall_at_5,
+                      )
+                    }}
+                  </strong>
+                  <small>
+                    Recall@1
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.retrieval.class_recall_at_1,
+                      )
+                    }}
+                  </small>
+                </div>
+                <div>
+                  <span>分类＋检索候选 Recall@5</span>
+                  <strong>
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.fusion.assisted_candidate_recall_at_5,
+                      )
+                    }}
+                  </strong>
+                  <small>候选覆盖率，不等于自动判定准确率</small>
+                </div>
+                <div>
+                  <span>0.85 阈值自动通过</span>
+                  <strong>
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.workflow.auto_pass_coverage,
+                      )
+                    }}
+                  </strong>
+                  <small>
+                    通过结果准确率
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.workflow.auto_pass_accuracy,
+                      )
+                    }}
+                  </small>
+                </div>
+                <div>
+                  <span>待复核率</span>
+                  <strong>
+                    {{
+                      formatMetricPercent(
+                        oracleQualityMetrics.business_simulation.workflow.review_rate,
+                      )
+                    }}
+                  </strong>
+                  <small>
+                    规划约
+                    {{
+                      oracleQualityMetrics.business_simulation.performance.estimated_manual_minutes_per_100.toFixed(
+                        1,
+                      )
+                    }}
+                    分钟 / 100张
+                  </small>
+                </div>
+                <div>
+                  <span>平均 / P95 延迟</span>
+                  <strong>
+                    {{
+                      oracleQualityMetrics.business_simulation.performance.p95_ms_per_image.toFixed(2)
+                    }}
+                    ms
+                  </strong>
+                  <small>
+                    平均
+                    {{
+                      oracleQualityMetrics.business_simulation.performance.mean_ms_per_image.toFixed(2)
+                    }}
+                    ms
+                  </small>
+                </div>
+              </div>
+              <p class="oracle-evidence-note">
+                人工复核时间按每条20秒估算，并非真实人员实验；检索Top‑1直接替换分类的对照结果更差，因此线上只展示候选证据。
+              </p>
+            </section>
+
+            <section v-else class="oracle-metrics-panel">
+              <p class="oracle-metrics-empty">
+                尚未生成业务模拟证据；请先运行 run_oracle_business_simulation.py。
+              </p>
+            </section>
           </template>
 
           <div v-if="oracleError" class="oracle-error">
@@ -2292,6 +2601,22 @@ onBeforeUnmount(() => {
 
 .oracle-metrics-empty {
   margin: 12px 0 0;
+}
+
+.oracle-business-evidence {
+  background: linear-gradient(135deg, #f0fdf4, #ffffff);
+  border-color: #bbf7d0;
+}
+
+.oracle-business-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.oracle-evidence-note {
+  margin: 12px 0 0;
+  color: #166534;
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .oracle-batch-panel {

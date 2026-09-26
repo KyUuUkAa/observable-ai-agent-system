@@ -184,6 +184,9 @@ def get_oracle_quality_metrics() -> dict:
     regression = _read_report(
         "reports/agent_regression/latest.json"
     )
+    business_simulation = _read_report(
+        "docs/evidence/oracle_business_300.json"
+    )
 
     return {
         "review_summary": get_oracle_review_summary(),
@@ -256,6 +259,20 @@ def get_oracle_quality_metrics() -> dict:
                 ),
             }
             if regression
+            else None
+        ),
+        "business_simulation": (
+            {
+                "generated_at": business_simulation.get("generated_at"),
+                "sample": business_simulation.get("sample", {}),
+                "classification": business_simulation.get("classification", {}),
+                "retrieval": business_simulation.get("retrieval", {}),
+                "fusion": business_simulation.get("fusion", {}),
+                "workflow": business_simulation.get("workflow", {}),
+                "performance": business_simulation.get("performance", {}),
+                "leakage_audit": business_simulation.get("leakage_audit", {}),
+            }
+            if business_simulation
             else None
         ),
     }

@@ -115,7 +115,7 @@ Main endpoints:
 | PATCH | `/oracle/records/{record_id}/review` | Confirm or reject a recognition result |
 | GET | `/oracle/records/export` | Export filtered records as CSV or JSON |
 | GET | `/oracle/exports/{export_id}` | Download an export created by the Agent |
-| GET | `/oracle/metrics` | Read model, calibration, review and Agent regression metrics |
+| GET | `/oracle/metrics` | Read model, calibration, held-out business simulation, review and Agent regression metrics |
 
 When the backend is running locally, the interactive API documentation is available at:
 
@@ -1179,6 +1179,59 @@ test images shared by both checkpoints, the specialized 39-class model reaches
 reported separately from the expanded model's 109-class result: the smaller model is
 stronger in its narrow label set, while the expanded model covers 70 additional
 classes.
+
+### Reproduce the 300-image business simulation
+
+The portfolio evidence is generated from a fixed, stratified 300-image sample of the
+held-out 109-class test split. Before sampling, the runner rejects source groups that
+appear in train or validation and checks materialized image SHA-256 values for exact
+content overlap. This stricter audit found 14 source groups crossing splits in the
+full 28,537-image manifest; two affected test images in the 109-class tier were
+excluded before the fixed sample was created.
+
+```powershell
+python .\scripts\run_oracle_business_simulation.py --device cuda
+```
+
+The fixed sample lives in
+`evaluation/cases/oracle_business_300.csv`. Use `--refresh-sample` only when you
+intentionally want a new sample; otherwise repeated runs verify every stored image
+hash and reuse the same records.
+
+Latest accepted evidence:
+
+| Metric | Result |
+|---|---:|
+| Held-out rubbings / classes | 300 / 109 |
+| Classification Top-1 / Top-5 | 79.67% / 95.00% |
+| Macro-F1 | 72.58% |
+| Distinct-class retrieval Recall@1 / Recall@5 | 33.33% / 60.00% |
+| Classification + retrieval candidate Recall@5 | 95.33% |
+| Auto-pass coverage at 0.85 | 58.00% |
+| Accuracy among auto-passed records | 94.25% |
+| Review queue rate | 42.00% |
+| Mean / P95 sequential visual latency (CUDA) | 17.76 / 20.38 ms |
+| Compute-only time per 100 images | 1.78 s |
+
+The report deliberately separates candidate coverage from automatic accuracy. A
+hypothetical rule that replaces low-confidence classifications with retrieval Top-1
+reached only 63.67%, so the production workflow keeps retrieval as review evidence
+instead of silently changing the class. The estimated 14 minutes of manual work per
+100 images assumes 20 seconds per queued item; it is a planning scenario, not a
+measured museum-operator productivity claim.
+
+Versioned summary: [`docs/evidence/oracle_business_300.md`](docs/evidence/oracle_business_300.md).
+The ignored local run directory also contains all 300 CSV/JSONL records and an HTML
+error gallery:
+
+```text
+reports/oracle_business_simulation/latest/
+├── report.json
+├── report.md
+├── records.csv
+├── records.jsonl
+└── error_gallery/index.html
+```
 
 ## 8. Install Frontend Dependencies
 

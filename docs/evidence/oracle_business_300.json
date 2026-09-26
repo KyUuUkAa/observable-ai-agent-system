@@ -1,0 +1,1164 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-25T21:07:51.108598+00:00",
+  "experiment": {
+    "name": "oracle-business-simulation-300",
+    "scope": "offline_held_out_business_simulation",
+    "human_study": false,
+    "notes": [
+      "No modern-character dictionary is used or inferred.",
+      "Retrieval is candidate evidence; production does not silently replace classification.",
+      "Human review time is a configurable planning assumption, not a measured result."
+    ]
+  },
+  "sample": {
+    "images": 300,
+    "classes": 109,
+    "seed": 20260926,
+    "split": "test",
+    "stratification": "proportional_with_minimum_one_per_class",
+    "minimum_images_per_class": 1,
+    "maximum_images_per_class": 10,
+    "population_images_after_strict_filter": 1032
+  },
+  "provenance": {
+    "model_sha256": "e4ee75f94fa7d056a9485a8d4761c56c509e01b404205a27ba24ad6c7a87e4c9",
+    "index_sha256": "d9231d15c8bae69dfc5f980216e3e9f26af31f8aa6b682b20885f99bcdb16670",
+    "source_manifest_sha256": "2b8acc8c8fafb1c24031d66e78bb11f97fa2ffac9ad86e8c3f0eab9978575ca8",
+    "sample_manifest_sha256": "b9512bafc01352e61ebc0fa3f9423aadce46790f64924e6a6b098f1f20166f00",
+    "model_classes": 109,
+    "index_candidates": 25510,
+    "index_classes": 4038,
+    "device": "cuda",
+    "python": "3.11.13",
+    "torch": "2.7.1+cu128",
+    "cuda": "12.8"
+  },
+  "leakage_audit": {
+    "dataset_pair_split_conflicts": 0,
+    "dataset_source_group_split_conflicts": 14,
+    "strict_candidate_images": 1032,
+    "source_conflict_images_excluded": 2,
+    "content_overlap_images_excluded": 0,
+    "selected_record_id_overlap": 0,
+    "selected_pair_overlap": 0,
+    "selected_source_group_overlap": 0,
+    "selected_content_hash_overlap": 0,
+    "selected_duplicate_content_hashes": 0,
+    "all_selected_from_test": true,
+    "passed": true
+  },
+  "classification": {
+    "top1_correct": 239,
+    "top1_accuracy": 0.7966666666666666,
+    "top5_correct": 285,
+    "top5_accuracy": 0.95,
+    "macro_precision": 0.7344572858334327,
+    "macro_recall": 0.7630515508955876,
+    "macro_f1": 0.7258417462964852,
+    "per_class": [
+      {
+        "class_code": "001000",
+        "support": 2,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "001001",
+        "support": 2,
+        "correct": 2,
+        "precision": 0.6666666666666666,
+        "recall": 1.0,
+        "f1": 0.8
+      },
+      {
+        "class_code": "001027",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "001030",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "001109",
+        "support": 6,
+        "correct": 6,
+        "precision": 0.8571428571428571,
+        "recall": 1.0,
+        "f1": 0.923076923076923
+      },
+      {
+        "class_code": "001114",
+        "support": 1,
+        "correct": 1,
+        "precision": 0.3333333333333333,
+        "recall": 1.0,
+        "f1": 0.5
+      },
+      {
+        "class_code": "001120",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "001136",
+        "support": 1,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "002000",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "003011",
+        "support": 1,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "003042",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "003043",
+        "support": 4,
+        "correct": 4,
+        "precision": 0.8,
+        "recall": 1.0,
+        "f1": 0.888888888888889
+      },
+      {
+        "class_code": "003048",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "003049",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "003057",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "003077",
+        "support": 2,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5
+      },
+      {
+        "class_code": "003133",
+        "support": 2,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "004000",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "004002",
+        "support": 10,
+        "correct": 8,
+        "precision": 0.7272727272727273,
+        "recall": 0.8,
+        "f1": 0.761904761904762
+      },
+      {
+        "class_code": "004013",
+        "support": 2,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5
+      },
+      {
+        "class_code": "005000",
+        "support": 3,
+        "correct": 3,
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.8571428571428571
+      },
+      {
+        "class_code": "005027",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "006020",
+        "support": 3,
+        "correct": 3,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "006098",
+        "support": 2,
+        "correct": 2,
+        "precision": 0.6666666666666666,
+        "recall": 1.0,
+        "f1": 0.8
+      },
+      {
+        "class_code": "006102",
+        "support": 2,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "010001",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "010004",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "010007",
+        "support": 2,
+        "correct": 1,
+        "precision": 0.3333333333333333,
+        "recall": 0.5,
+        "f1": 0.4
+      },
+      {
+        "class_code": "010009",
+        "support": 4,
+        "correct": 4,
+        "precision": 0.8,
+        "recall": 1.0,
+        "f1": 0.888888888888889
+      },
+      {
+        "class_code": "010064",
+        "support": 2,
+        "correct": 2,
+        "precision": 0.6666666666666666,
+        "recall": 1.0,
+        "f1": 0.8
+      },
+      {
+        "class_code": "011000",
+        "support": 7,
+        "correct": 6,
+        "precision": 0.8571428571428571,
+        "recall": 0.8571428571428571,
+        "f1": 0.8571428571428571
+      },
+      {
+        "class_code": "011010",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "011012",
+        "support": 4,
+        "correct": 3,
+        "precision": 1.0,
+        "recall": 0.75,
+        "f1": 0.8571428571428571
+      },
+      {
+        "class_code": "011014",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "014002",
+        "support": 4,
+        "correct": 4,
+        "precision": 0.8,
+        "recall": 1.0,
+        "f1": 0.888888888888889
+      },
+      {
+        "class_code": "015000",
+        "support": 4,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "018039",
+        "support": 4,
+        "correct": 4,
+        "precision": 0.8,
+        "recall": 1.0,
+        "f1": 0.888888888888889
+      },
+      {
+        "class_code": "020000",
+        "support": 3,
+        "correct": 3,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "022009",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "023000",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "026063",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "030102",
+        "support": 4,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "031000",
+        "support": 2,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "031042",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "034000",
+        "support": 1,
+        "correct": 1,
+        "precision": 0.3333333333333333,
+        "recall": 1.0,
+        "f1": 0.5
+      },
+      {
+        "class_code": "035000",
+        "support": 4,
+        "correct": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "036000",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "037000",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "038000",
+        "support": 6,
+        "correct": 4,
+        "precision": 0.8,
+        "recall": 0.6666666666666666,
+        "f1": 0.7272727272727272
+      },
+      {
+        "class_code": "039000",
+        "support": 8,
+        "correct": 5,
+        "precision": 0.8333333333333334,
+        "recall": 0.625,
+        "f1": 0.7142857142857143
+      },
+      {
+        "class_code": "039011",
+        "support": 2,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5
+      },
+      {
+        "class_code": "040000",
+        "support": 3,
+        "correct": 3,
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.8571428571428571
+      },
+      {
+        "class_code": "041000",
+        "support": 5,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 0.4,
+        "f1": 0.5714285714285715
+      },
+      {
+        "class_code": "045000",
+        "support": 2,
+        "correct": 2,
+        "precision": 0.6666666666666666,
+        "recall": 1.0,
+        "f1": 0.8
+      },
+      {
+        "class_code": "047000",
+        "support": 2,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5
+      },
+      {
+        "class_code": "047008",
+        "support": 2,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "047009",
+        "support": 1,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "048000",
+        "support": 7,
+        "correct": 5,
+        "precision": 0.5,
+        "recall": 0.7142857142857143,
+        "f1": 0.588235294117647
+      },
+      {
+        "class_code": "048008",
+        "support": 7,
+        "correct": 5,
+        "precision": 0.7142857142857143,
+        "recall": 0.7142857142857143,
+        "f1": 0.7142857142857143
+      },
+      {
+        "class_code": "048085",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "048106",
+        "support": 2,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "049011",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "050000",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "051005",
+        "support": 2,
+        "correct": 2,
+        "precision": 0.6666666666666666,
+        "recall": 1.0,
+        "f1": 0.8
+      },
+      {
+        "class_code": "058000",
+        "support": 10,
+        "correct": 10,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "060016",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "062001",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "064002",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "064005",
+        "support": 4,
+        "correct": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "064028",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "068009",
+        "support": 2,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "070000",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "073000",
+        "support": 4,
+        "correct": 4,
+        "precision": 0.8,
+        "recall": 1.0,
+        "f1": 0.888888888888889
+      },
+      {
+        "class_code": "075042",
+        "support": 1,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "077001",
+        "support": 7,
+        "correct": 6,
+        "precision": 1.0,
+        "recall": 0.8571428571428571,
+        "f1": 0.923076923076923
+      },
+      {
+        "class_code": "077033",
+        "support": 3,
+        "correct": 3,
+        "precision": 0.75,
+        "recall": 1.0,
+        "f1": 0.8571428571428571
+      },
+      {
+        "class_code": "078038",
+        "support": 4,
+        "correct": 3,
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75
+      },
+      {
+        "class_code": "078042",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "078048",
+        "support": 2,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "078057",
+        "support": 4,
+        "correct": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "078074",
+        "support": 6,
+        "correct": 5,
+        "precision": 0.8333333333333334,
+        "recall": 0.8333333333333334,
+        "f1": 0.8333333333333334
+      },
+      {
+        "class_code": "079018",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "080002",
+        "support": 6,
+        "correct": 4,
+        "precision": 0.8,
+        "recall": 0.6666666666666666,
+        "f1": 0.7272727272727272
+      },
+      {
+        "class_code": "080009",
+        "support": 1,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "083000",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "088013",
+        "support": 5,
+        "correct": 4,
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.888888888888889
+      },
+      {
+        "class_code": "089008",
+        "support": 2,
+        "correct": 2,
+        "precision": 0.6666666666666666,
+        "recall": 1.0,
+        "f1": 0.8
+      },
+      {
+        "class_code": "093000",
+        "support": 7,
+        "correct": 4,
+        "precision": 1.0,
+        "recall": 0.5714285714285714,
+        "f1": 0.7272727272727273
+      },
+      {
+        "class_code": "093001",
+        "support": 1,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "093037",
+        "support": 9,
+        "correct": 9,
+        "precision": 0.9,
+        "recall": 1.0,
+        "f1": 0.9473684210526316
+      },
+      {
+        "class_code": "096023",
+        "support": 2,
+        "correct": 2,
+        "precision": 0.6666666666666666,
+        "recall": 1.0,
+        "f1": 0.8
+      },
+      {
+        "class_code": "098017",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "100004",
+        "support": 2,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "100026",
+        "support": 2,
+        "correct": 2,
+        "precision": 0.6666666666666666,
+        "recall": 1.0,
+        "f1": 0.8
+      },
+      {
+        "class_code": "115008",
+        "support": 2,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "115032",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "118004",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "134006",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "134014",
+        "support": 4,
+        "correct": 3,
+        "precision": 0.5,
+        "recall": 0.75,
+        "f1": 0.6
+      },
+      {
+        "class_code": "146000",
+        "support": 1,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "150015",
+        "support": 4,
+        "correct": 3,
+        "precision": 0.6,
+        "recall": 0.75,
+        "f1": 0.6666666666666665
+      },
+      {
+        "class_code": "150026",
+        "support": 2,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      {
+        "class_code": "150042",
+        "support": 2,
+        "correct": 1,
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1": 0.5
+      },
+      {
+        "class_code": "150059",
+        "support": 4,
+        "correct": 4,
+        "precision": 0.8,
+        "recall": 1.0,
+        "f1": 0.888888888888889
+      },
+      {
+        "class_code": "150062",
+        "support": 1,
+        "correct": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      {
+        "class_code": "150075",
+        "support": 3,
+        "correct": 2,
+        "precision": 1.0,
+        "recall": 0.6666666666666666,
+        "f1": 0.8
+      },
+      {
+        "class_code": "150088",
+        "support": 1,
+        "correct": 1,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "150100",
+        "support": 4,
+        "correct": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      {
+        "class_code": "151049",
+        "support": 4,
+        "correct": 4,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    ]
+  },
+  "retrieval": {
+    "queries": 300,
+    "class_recall_at_1": 0.3333333333333333,
+    "class_recall_at_5": 0.6,
+    "exact_pair_recall_at_1": 0.02666666666666667,
+    "exact_pair_recall_at_5": 0.06666666666666667,
+    "low_confidence_subset": {
+      "queries": 126,
+      "class_recall_at_1": 0.21428571428571427,
+      "class_recall_at_5": 0.4365079365079365,
+      "exact_pair_recall_at_1": 0.031746031746031744,
+      "exact_pair_recall_at_5": 0.07142857142857142
+    }
+  },
+  "fusion": {
+    "definition": "union of classification Top-5 and distinct-class retrieval Top-5",
+    "assisted_candidate_hits_at_5": 286,
+    "assisted_candidate_recall_at_5": 0.9533333333333334,
+    "experimental_replacement_accuracy": 0.6366666666666667
+  },
+  "workflow": {
+    "threshold": 0.85,
+    "auto_pass_count": 174,
+    "auto_pass_coverage": 0.58,
+    "auto_pass_correct": 164,
+    "auto_pass_accuracy": 0.9425287356321839,
+    "false_accept_count": 10,
+    "false_accept_rate_among_auto_passed": 0.05747126436781609,
+    "review_count": 126,
+    "review_rate": 0.42,
+    "review_conflict_count": 98,
+    "review_conflict_rate": 0.7777777777777778,
+    "experimental_replacement_accuracy": 0.6366666666666667,
+    "estimated_reviews_per_100": 42.0,
+    "estimated_manual_minutes_per_100": 14.0
+  },
+  "threshold_analysis": [
+    {
+      "threshold": 0.5,
+      "auto_pass_count": 258,
+      "auto_pass_coverage": 0.86,
+      "auto_pass_correct": 223,
+      "auto_pass_accuracy": 0.8643410852713178,
+      "false_accept_count": 35,
+      "false_accept_rate_among_auto_passed": 0.13565891472868216,
+      "review_count": 42,
+      "review_rate": 0.14,
+      "review_conflict_count": 38,
+      "review_conflict_rate": 0.9047619047619048,
+      "experimental_replacement_accuracy": 0.7566666666666667,
+      "estimated_reviews_per_100": 14.0,
+      "estimated_manual_minutes_per_100": 4.666666666666667
+    },
+    {
+      "threshold": 0.6,
+      "auto_pass_count": 241,
+      "auto_pass_coverage": 0.8033333333333333,
+      "auto_pass_correct": 215,
+      "auto_pass_accuracy": 0.8921161825726142,
+      "false_accept_count": 26,
+      "false_accept_rate_among_auto_passed": 0.1078838174273859,
+      "review_count": 59,
+      "review_rate": 0.19666666666666666,
+      "review_conflict_count": 50,
+      "review_conflict_rate": 0.847457627118644,
+      "experimental_replacement_accuracy": 0.74,
+      "estimated_reviews_per_100": 19.666666666666668,
+      "estimated_manual_minutes_per_100": 6.555555555555556
+    },
+    {
+      "threshold": 0.7,
+      "auto_pass_count": 222,
+      "auto_pass_coverage": 0.74,
+      "auto_pass_correct": 204,
+      "auto_pass_accuracy": 0.918918918918919,
+      "false_accept_count": 18,
+      "false_accept_rate_among_auto_passed": 0.08108108108108109,
+      "review_count": 78,
+      "review_rate": 0.26,
+      "review_conflict_count": 63,
+      "review_conflict_rate": 0.8076923076923077,
+      "experimental_replacement_accuracy": 0.73,
+      "estimated_reviews_per_100": 26.0,
+      "estimated_manual_minutes_per_100": 8.666666666666666
+    },
+    {
+      "threshold": 0.8,
+      "auto_pass_count": 187,
+      "auto_pass_coverage": 0.6233333333333333,
+      "auto_pass_correct": 176,
+      "auto_pass_accuracy": 0.9411764705882353,
+      "false_accept_count": 11,
+      "false_accept_rate_among_auto_passed": 0.058823529411764705,
+      "review_count": 113,
+      "review_rate": 0.37666666666666665,
+      "review_conflict_count": 88,
+      "review_conflict_rate": 0.7787610619469026,
+      "experimental_replacement_accuracy": 0.6633333333333333,
+      "estimated_reviews_per_100": 37.666666666666664,
+      "estimated_manual_minutes_per_100": 12.555555555555554
+    },
+    {
+      "threshold": 0.85,
+      "auto_pass_count": 174,
+      "auto_pass_coverage": 0.58,
+      "auto_pass_correct": 164,
+      "auto_pass_accuracy": 0.9425287356321839,
+      "false_accept_count": 10,
+      "false_accept_rate_among_auto_passed": 0.05747126436781609,
+      "review_count": 126,
+      "review_rate": 0.42,
+      "review_conflict_count": 98,
+      "review_conflict_rate": 0.7777777777777778,
+      "experimental_replacement_accuracy": 0.6366666666666667,
+      "estimated_reviews_per_100": 42.0,
+      "estimated_manual_minutes_per_100": 14.0
+    },
+    {
+      "threshold": 0.9,
+      "auto_pass_count": 154,
+      "auto_pass_coverage": 0.5133333333333333,
+      "auto_pass_correct": 148,
+      "auto_pass_accuracy": 0.961038961038961,
+      "false_accept_count": 6,
+      "false_accept_rate_among_auto_passed": 0.03896103896103896,
+      "review_count": 146,
+      "review_rate": 0.4866666666666667,
+      "review_conflict_count": 113,
+      "review_conflict_rate": 0.773972602739726,
+      "experimental_replacement_accuracy": 0.6066666666666667,
+      "estimated_reviews_per_100": 48.666666666666664,
+      "estimated_manual_minutes_per_100": 16.22222222222222
+    },
+    {
+      "threshold": 0.95,
+      "auto_pass_count": 124,
+      "auto_pass_coverage": 0.41333333333333333,
+      "auto_pass_correct": 121,
+      "auto_pass_accuracy": 0.9758064516129032,
+      "false_accept_count": 3,
+      "false_accept_rate_among_auto_passed": 0.024193548387096774,
+      "review_count": 176,
+      "review_rate": 0.5866666666666667,
+      "review_conflict_count": 136,
+      "review_conflict_rate": 0.7727272727272727,
+      "experimental_replacement_accuracy": 0.5366666666666666,
+      "estimated_reviews_per_100": 58.666666666666664,
+      "estimated_manual_minutes_per_100": 19.555555555555554
+    }
+  ],
+  "performance": {
+    "initialization_seconds": 0.16047520000574877,
+    "processing_seconds": 5.343596099999559,
+    "mean_ms_per_image": 17.764073666645952,
+    "median_ms_per_image": 17.39705000363756,
+    "p95_ms_per_image": 20.383990001209895,
+    "minimum_ms_per_image": 14.70569999946747,
+    "maximum_ms_per_image": 69.74469999840949,
+    "compute_seconds_per_100": 1.7811986999998528,
+    "assumed_review_seconds": 20.0,
+    "estimated_reviews_per_100": 42.0,
+    "estimated_manual_minutes_per_100": 14.0,
+    "estimated_serial_minutes_per_100": 14.029686644999998,
+    "export_seconds": 0.018046199998934753
+  },
+  "top_confusions": [
+    {
+      "true_class": "048008",
+      "predicted_class": "048000",
+      "count": 2
+    },
+    {
+      "true_class": "150026",
+      "predicted_class": "100026",
+      "count": 1
+    },
+    {
+      "true_class": "041000",
+      "predicted_class": "040000",
+      "count": 1
+    },
+    {
+      "true_class": "010007",
+      "predicted_class": "150015",
+      "count": 1
+    },
+    {
+      "true_class": "041000",
+      "predicted_class": "134014",
+      "count": 1
+    },
+    {
+      "true_class": "047008",
+      "predicted_class": "004002",
+      "count": 1
+    },
+    {
+      "true_class": "047000",
+      "predicted_class": "048000",
+      "count": 1
+    },
+    {
+      "true_class": "150042",
+      "predicted_class": "010009",
+      "count": 1
+    },
+    {
+      "true_class": "004000",
+      "predicted_class": "004002",
+      "count": 1
+    },
+    {
+      "true_class": "038000",
+      "predicted_class": "048008",
+      "count": 1
+    }
+  ],
+  "exports": {
+    "csv": "reports/oracle_business_simulation/latest/records.csv",
+    "jsonl": "reports/oracle_business_simulation/latest/records.jsonl",
+    "csv_records": 300,
+    "jsonl_records": 300,
+    "counts_match": true,
+    "export_seconds": 0.018046199998934753
+  },
+  "error_gallery": {
+    "eligible_cases": 230,
+    "displayed_cases": 30,
+    "index": "reports/oracle_business_simulation/latest/error_gallery/index.html"
+  }
+}
